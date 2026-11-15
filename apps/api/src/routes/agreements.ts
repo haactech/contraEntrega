@@ -6,7 +6,8 @@ import { parseJson } from "../lib/validate";
 import { requireSeller } from "../middleware/session";
 import { AppError } from "../lib/errors";
 import { addEvidence, assertDeclaredSize, removeEvidence, requestReview } from "../services/evidence";
-import { createAgreement, getSellerView, listAgreements, shareAgreement } from "../services/agreements";
+import { exportResponse, renderExport } from "../services/export";
+import { createAgreement, getSellerView, listAgreements, loadOwned, shareAgreement } from "../services/agreements";
 
 export const agreementRoutes = new Hono<HonoEnv>();
 agreementRoutes.use("*", requireSeller);
@@ -60,4 +61,9 @@ agreementRoutes.delete("/:id/evidence/:evidenceId", async (c) => {
 agreementRoutes.post("/:id/request-review", async (c) => {
   const body = await parseJson(c, RequestReviewRequestSchema, true);
   return c.json(await requestReview(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), body, Date.now()));
+});
+
+agreementRoutes.get("/:id/export", async (c) => {
+  const b = await loadOwned(createDb(c.env.DB), sellerId(c), c.req.param("id"));
+  return exportResponse(await renderExport(c.env, b, "seller", Date.now()));
 });

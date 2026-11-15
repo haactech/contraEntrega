@@ -8,6 +8,9 @@ import { forbidOwnerSeller, resolveToken } from "../middleware/session";
 import { expireStalePaymentRequests } from "../payments/expire";
 import { createForBuyer, parseIdempotencyKey, refreshForBuyer } from "../services/payments";
 import { evidenceWindow } from "../lib/url-window";
+import { loadBundle } from "../repos/agreements";
+import { exportResponse, renderExport } from "../services/export";
+import { notFound } from "../lib/errors";
 import { submitReview } from "../services/review";
 import { acceptAgreement, agreementVersion, etagFor, getBuyerView } from "../services/public";
 
@@ -89,3 +92,9 @@ publicRoutes.post(
     return c.json(view);
   },
 );
+
+publicRoutes.get("/tratos/:token/export", rateLimit("RL_PUBLIC_READ", publicKey("x")), async (c) => {
+  const b = await loadBundle(createDb(c.env.DB), c.get("access").agreementId);
+  if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
+  return exportResponse(await renderExport(c.env, b, "buyer", Date.now()));
+});
