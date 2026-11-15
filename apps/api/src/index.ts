@@ -4,6 +4,7 @@ import { onError, onNotFound } from "./middleware/error";
 import { securityHeaders } from "./middleware/security";
 import { devRoutes } from "./routes/dev";
 import { agreementRoutes } from "./routes/agreements";
+import { fileRoutes } from "./routes/files";
 import { publicRoutes } from "./routes/public";
 import { systemRoutes } from "./routes/system";
 import { webhookRoutes } from "./routes/webhooks";
@@ -13,6 +14,7 @@ api.use("*", securityHeaders);
 api.route("/", systemRoutes);
 api.route("/agreements", agreementRoutes);
 api.route("/public", publicRoutes);
+api.route("/files", fileRoutes);
 api.route("/webhooks", webhookRoutes);
 api.route("/dev", devRoutes);
 

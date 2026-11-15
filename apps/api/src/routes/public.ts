@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { AcceptAgreementRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
+import { AcceptAgreementRequestSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { parseJson } from "../lib/validate";
@@ -7,6 +7,8 @@ import { publicKey, rateLimit } from "../middleware/ratelimit";
 import { forbidOwnerSeller, resolveToken } from "../middleware/session";
 import { expireStalePaymentRequests } from "../payments/expire";
 import { createForBuyer, parseIdempotencyKey, refreshForBuyer } from "../services/payments";
+import { evidenceWindow } from "../lib/url-window";
+import { submitReview } from "../services/review";
 import { acceptAgreement, agreementVersion, etagFor, getBuyerView } from "../services/public";
 
 export const publicRoutes = new Hono<HonoEnv>();
@@ -19,8 +21,10 @@ publicRoutes.get("/tratos/:token", rateLimit("RL_PUBLIC_READ", publicKey("r")), 
   const { agreementId } = c.get("access");
   // Lazy local expiry (no provider call); bumps the version so the ETag below is already fresh.
   await expireStalePaymentRequests(c.env, agreementId, Date.now());
+  const now = Date.now();
+  const win = evidenceWindow(now);
   const version = await agreementVersion(db, agreementId);
-  const etag = version === null ? null : etagFor(version);
+  const etag = version === null ? null : etagFor(version, win);
   c.header("Cache-Control", "no-store");
   c.header("Referrer-Policy", "no-referrer");
   if (etag) {
@@ -28,9 +32,9 @@ publicRoutes.get("/tratos/:token", rateLimit("RL_PUBLIC_READ", publicKey("r")), 
     const inm = c.req.header("If-None-Match");
     if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) return c.body(null, 304);
   }
-  const view = await getBuyerView(db, c.env, agreementId, Date.now());
+  const view = await getBuyerView(db, c.env, agreementId, now);
   // Version may have advanced between the two reads: tag the response with the view's own version.
-  c.header("ETag", etagFor(view.agreement.version));
+  c.header("ETag", etagFor(view.agreement.version, win));
   return c.json(view);
 });
 
@@ -69,6 +73,18 @@ publicRoutes.post(
   rateLimit("RL_PUBLIC_READ", publicKey("rf")),
   async (c) => {
     const view = await refreshForBuyer(c.env, c.get("access").agreementId, c.req.param("id") ?? "", Date.now());
+    c.header("Cache-Control", "no-store");
+    return c.json(view);
+  },
+);
+
+publicRoutes.post(
+  "/tratos/:token/review",
+  rateLimit("RL_PUBLIC_WRITE", publicKey("w")),
+  forbidOwnerSeller,
+  async (c) => {
+    const input = await parseJson(c, ReviewRequestSchema);
+    const view = await submitReview(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now());
     c.header("Cache-Control", "no-store");
     return c.json(view);
   },

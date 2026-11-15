@@ -17,9 +17,9 @@ import {
 } from "@trato/shared";
 import type { AppEnv } from "../env";
 import { decryptText, signUrl } from "../lib/crypto";
+import { evidenceUrlExpiry } from "../lib/url-window";
 import type { AgreementBundle, AgreementRow, MilestoneRow } from "../repos/agreements";
 
-const EVIDENCE_URL_TTL_MS = 15 * 60 * 1000;
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 const isoOrNull = (ms: number | null): string | null => (ms === null ? null : iso(ms));
@@ -94,7 +94,7 @@ export const paymentRequestView = (
   paidAt: isoOrNull(p.paidAt),
 });
 
-async function evidenceView(
+export async function evidenceView(
   env: AppEnv,
   e: AgreementBundle["evidence"][number],
   nowMs: number,
@@ -103,7 +103,7 @@ async function evidenceView(
     id: e.id,
     milestoneId: e.milestoneId,
     deliveryRound: e.deliveryRound,
-    url: await signUrl(env.SESSION_SECRET, API_ROUTES.evidenceFile(e.id), nowMs + EVIDENCE_URL_TTL_MS),
+    url: await signUrl(env.SESSION_SECRET, API_ROUTES.evidenceFile(e.id), evidenceUrlExpiry(nowMs)),
     mimeType: e.mimeType,
     sizeBytes: e.sizeBytes,
     sha256: e.sha256,
@@ -112,7 +112,7 @@ async function evidenceView(
   };
 }
 
-const reviewView = (r: AgreementBundle["reviews"][number]): ReviewView => ({
+export const reviewView = (r: AgreementBundle["reviews"][number]): ReviewView => ({
   id: r.id,
   milestoneId: r.milestoneId,
   deliveryRound: r.deliveryRound,
@@ -131,7 +131,7 @@ function parsePayload(json: string): Record<string, unknown> {
   }
 }
 
-function eventViews(events: AgreementBundle["events"], hideForBuyer: boolean): EventView[] {
+export function eventViews(events: AgreementBundle["events"], hideForBuyer: boolean): EventView[] {
   const hidden: readonly string[] = BUYER_HIDDEN_EVENT_TYPES;
   const out: EventView[] = [];
   for (const e of events) {

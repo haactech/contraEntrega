@@ -1,9 +1,11 @@
 import { Hono } from "hono";
-import { CreateAgreementInputSchema, ShareAgreementRequestSchema } from "@trato/shared";
+import { CreateAgreementInputSchema, EVIDENCE_LIMITS, RequestReviewRequestSchema, ShareAgreementRequestSchema } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { parseJson } from "../lib/validate";
 import { requireSeller } from "../middleware/session";
+import { AppError } from "../lib/errors";
+import { addEvidence, assertDeclaredSize, removeEvidence, requestReview } from "../services/evidence";
 import { createAgreement, getSellerView, listAgreements, shareAgreement } from "../services/agreements";
 
 export const agreementRoutes = new Hono<HonoEnv>();
@@ -34,4 +36,28 @@ agreementRoutes.post("/:id/share", async (c) => {
     Date.now(),
   );
   return c.json(res);
+});
+
+agreementRoutes.post("/:id/evidence", async (c) => {
+  assertDeclaredSize(c.req.header("content-length"));
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    throw new AppError("VALIDATION_ERROR", "Envía la foto como multipart/form-data.");
+  }
+  const file = form.get(EVIDENCE_LIMITS.fieldName);
+  if (!(file instanceof File)) throw new AppError("VALIDATION_ERROR", "Falta el archivo de la foto.");
+  const view = await addEvidence(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), file, Date.now());
+  return c.json(view, 201);
+});
+
+agreementRoutes.delete("/:id/evidence/:evidenceId", async (c) => {
+  await removeEvidence(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), c.req.param("evidenceId"), Date.now());
+  return c.body(null, 204);
+});
+
+agreementRoutes.post("/:id/request-review", async (c) => {
+  const body = await parseJson(c, RequestReviewRequestSchema, true);
+  return c.json(await requestReview(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), body, Date.now()));
 });

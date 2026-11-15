@@ -212,7 +212,7 @@ describe("vista pública", () => {
     const { token, created } = await newSharedAgreement();
     const res = await publicView(token);
     expect(res.status).toBe(200);
-    expect(res.headers.get("etag")).toMatch(/^"v\d+"$/);
+    expect(res.headers.get("etag")).toMatch(/^"v\d+-w\d+"$/);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("referrer-policy")).toBe("no-referrer");
     const v = (await res.json()) as BuyerAgreementView & { shareUrl?: unknown };

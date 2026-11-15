@@ -10,6 +10,7 @@ import type { AppEnv } from "../env";
 import { AppError, invalidState, notFound } from "../lib/errors";
 import { loadBundle } from "../repos/agreements";
 import { appendEventStatements, batchWithSeqRetry } from "../repos/events";
+import { evidenceWindow } from "../lib/url-window";
 import { buildBuyerView } from "./views";
 
 export async function agreementVersion(db: Db, agreementId: string): Promise<number | null> {
@@ -17,7 +18,8 @@ export async function agreementVersion(db: Db, agreementId: string): Promise<num
   return rows[0]?.v ?? null;
 }
 
-export const etagFor = (version: number): string => `"v${version}"`;
+/** The window index keeps a 304 from ever revalidating expired signed evidence URLs. */
+export const etagFor = (version: number, window: number): string => `"v${version}-w${window}"`;
 
 export async function getBuyerView(db: Db, env: AppEnv, agreementId: string, now: number): Promise<BuyerAgreementView> {
   const b = await loadBundle(db, agreementId);
