@@ -17,6 +17,7 @@ export function PaymentCard({ ctx, milestone }: { ctx: CardCtx; milestone: "ADVA
       milestone={m}
       activeRequest={ba.activePaymentRequest}
       viewVersion={ba.agreement.version}
+      single={ba.serviceType === "CLEANING"}
       release={milestone === "BALANCE" && m.approvedAt !== null}
       onChanged={() => void ctx.refresh()}
     />

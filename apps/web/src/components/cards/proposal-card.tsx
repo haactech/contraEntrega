@@ -4,6 +4,7 @@ import { AcceptAgreementRequestSchema, formatMxn, type ProposalView } from "@tra
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { parseCriteria } from "@/lib/criteria";
+import { proposalCleaningTasks } from "@/lib/cleaning";
 import { friendlyError } from "@/lib/errors";
 import { formatDate } from "@/lib/labels";
 import { YES_NOTE, type ProposalCardModel } from "@/lib/conversation";
@@ -48,6 +49,7 @@ export function ProposalCardBody({
 }) {
   const t = proposal.terms;
   const criteria = parseCriteria(t.acceptanceCriteria);
+  const tasks = proposalCleaningTasks(t);
   const strike = model.strike ? "line-through decoration-slate-400" : "";
 
   return (
@@ -68,13 +70,29 @@ export function ProposalCardBody({
       {model.strike && model.banner && <p className="text-sm font-semibold text-slate-700">{model.banner}</p>}
 
       {compact ? (
-        <p className={cn("text-sm text-slate-800", strike)}>
-          Total <b>{formatMxn(t.totalCents)}</b> · anticipo <b>{formatMxn(t.advanceCents)}</b> · saldo <b>{formatMxn(t.balanceCents)}</b>
-        </p>
+        tasks ? (
+          <p className={cn("text-sm text-slate-800", strike)}>
+            Total <b>{formatMxn(t.totalCents)}</b> · pago único al terminar · <b>{tasks.length}</b> {tasks.length === 1 ? "tarea" : "tareas"}
+          </p>
+        ) : (
+          <p className={cn("text-sm text-slate-800", strike)}>
+            Total <b>{formatMxn(t.totalCents)}</b> · anticipo <b>{formatMxn(t.advanceCents)}</b> · saldo <b>{formatMxn(t.balanceCents)}</b>
+          </p>
+        )
       ) : (
         <>
           {t.description && <p className={cn("whitespace-pre-wrap text-sm text-slate-800", strike)}>{t.description}</p>}
-          {criteria.length > 0 && (
+          {tasks && (
+            <div>
+              <h4 className="text-sm font-bold text-slate-600">Tareas</h4>
+              <ul aria-label="Tareas de la limpieza" className={cn("mt-1 list-disc space-y-0.5 pl-5 text-sm", strike)}>
+                {tasks.map((task) => (
+                  <li key={task.title}>{task.title}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!tasks && criteria.length > 0 && (
             <div>
               <h4 className="text-sm font-bold text-slate-600">Criterios de entrega</h4>
               <ul className={cn("mt-1 list-disc space-y-0.5 pl-5 text-sm", strike)}>
@@ -84,20 +102,33 @@ export function ProposalCardBody({
               </ul>
             </div>
           )}
-          <dl className={cn("grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center", strike)}>
-            <div>
-              <dt className="text-xs font-semibold text-slate-600">Total</dt>
-              <dd className="font-extrabold">{formatMxn(t.totalCents)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-slate-600">Anticipo</dt>
-              <dd className="font-extrabold">{formatMxn(t.advanceCents)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-slate-600">Saldo</dt>
-              <dd className="font-extrabold">{formatMxn(t.balanceCents)}</dd>
-            </div>
-          </dl>
+          {tasks ? (
+            <dl className={cn("grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-center", strike)}>
+              <div>
+                <dt className="text-xs font-semibold text-slate-600">Total</dt>
+                <dd className="font-extrabold">{formatMxn(t.totalCents)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold text-slate-600">Pago</dt>
+                <dd className="font-extrabold">Pago único al terminar</dd>
+              </div>
+            </dl>
+          ) : (
+            <dl className={cn("grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center", strike)}>
+              <div>
+                <dt className="text-xs font-semibold text-slate-600">Total</dt>
+                <dd className="font-extrabold">{formatMxn(t.totalCents)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold text-slate-600">Anticipo</dt>
+                <dd className="font-extrabold">{formatMxn(t.advanceCents)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold text-slate-600">Saldo</dt>
+                <dd className="font-extrabold">{formatMxn(t.balanceCents)}</dd>
+              </div>
+            </dl>
+          )}
           <p className={cn("text-sm text-slate-700", strike)}>
             Para <b>{t.buyerName}</b>
             {t.dueDate ? ` · entrega ${formatDate(t.dueDate)}` : " · sin fecha de entrega"}
@@ -140,10 +171,13 @@ export function AcceptForm({
   token,
   termsSha256,
   onDone,
+  singlePayment = false,
 }: {
   token: string;
   termsSha256: string;
   onDone: () => void | Promise<void>;
+  /** Cleaning: single payment at the end, no advance. */
+  singlePayment?: boolean;
 }) {
   const [name, setName] = useState("");
   const [consent, setConsent] = useState(false);
@@ -175,7 +209,11 @@ export function AcceptForm({
 
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-3" noValidate>
-      <p className="text-sm text-slate-700">Aceptar no es un pago: el anticipo se paga en el siguiente paso.</p>
+      <p className="text-sm text-slate-700">
+        {singlePayment
+          ? "Aceptar no es un pago: pagas una sola vez, cuando apruebes todas las tareas."
+          : "Aceptar no es un pago: el anticipo se paga en el siguiente paso."}
+      </p>
       <Field id="accept-name" label="Tu nombre completo" error={nameError}>
         <Input
           id="accept-name"

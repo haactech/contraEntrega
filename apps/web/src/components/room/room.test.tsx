@@ -153,3 +153,56 @@ describe("Room", () => {
     expect(dialog?.hasAttribute("open")).toBe(true);
   });
 });
+
+describe("Room: limpieza", () => {
+  const SHA = "a".repeat(64);
+  const task = (id: string, title: string, status: "TODO" | "IN_REVIEW" | "APPROVED", position: number) => ({
+    id, position, title, description: null, status, revision: 1, submittedAt: null, approvedAt: null,
+    evidence: status === "IN_REVIEW"
+      ? [{ id: `e-${id}`, milestoneId: "m1", deliveryRound: 0, url: "https://img/x.jpg", mimeType: "image/jpeg", sizeBytes: 1, sha256: SHA, submitted: true, taskId: id, kind: "AFTER" as const, revisionNumber: 1, createdAt: at0 }]
+      : [],
+    reviews: [],
+  });
+  const at0 = "2026-11-15T10:00:00.000Z";
+  const balance = { id: "m1", kind: "BALANCE" as const, amountCents: 70_000, description: "Pago al terminar", status: "WAITING_DELIVERY" as const, deliveryRound: 0, approvedAt: null, paidAt: null };
+
+  it("vendedor: la tarjeta Checklist reemplaza la de entrega y no ofrece aprobar", async () => {
+    const tasks = [task("t1", "Limpiar baño", "TODO", 1), task("t2", "Limpiar cocina", "IN_REVIEW", 2)];
+    const view = conversationView({
+      agreement: sellerAgreementFixture({
+        agreement: { ...sellerAgreementFixture().agreement, status: "IN_PROGRESS", title: "Limpieza de departamento", totalCents: 70_000 },
+        serviceType: "CLEANING", paymentStrategy: "ON_COMPLETION", tasks, taskProgress: { approved: 0, total: 2 },
+        milestones: [balance], conversationId: "c1", nextAction: "UPLOAD_EVIDENCE",
+      }),
+      allowedActions: actions("SUBMIT_TASK", "EXPORT"),
+    });
+    await mount(view, { role: "SELLER", conversationId: "c1" });
+    const text = host.textContent ?? "";
+    expect(text).toContain("Limpieza de departamento · $700.00");
+    expect(text).toContain("0/2 tareas aprobadas");
+    expect(text).toContain("Siguiente: Limpiar baño");
+    expect(text).not.toContain("Ya terminé");
+    expect(host.querySelector('[data-action="SUBMIT_TASK"]')?.textContent).toBe("Enviar para revisión");
+    expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "Aprobar")).toBe(false);
+  });
+
+  it("cliente: con todo aprobado ve «Pagar $700» y el pago único", async () => {
+    const tasks = [task("t1", "Limpiar baño", "APPROVED", 1), task("t2", "Limpiar cocina", "APPROVED", 2)];
+    const view = conversationView({
+      role: "BUYER",
+      agreement: buyerAgreementFixture({
+        agreement: { ...buyerAgreementFixture().agreement, status: "IN_PROGRESS", title: "Limpieza de departamento", totalCents: 70_000 },
+        serviceType: "CLEANING", paymentStrategy: "ON_COMPLETION", tasks, taskProgress: { approved: 2, total: 2 },
+        milestones: [{ ...balance, status: "READY_TO_CHARGE" }], nextAction: "PAY_BALANCE",
+      }),
+      allowedActions: actions("PAY_BALANCE", "EXPORT"),
+    });
+    await mount(view, { role: "BUYER", token: "tok" });
+    const text = host.textContent ?? "";
+    expect(text).toContain("2/2 tareas aprobadas");
+    expect(host.querySelector('[data-primary="PAY"]')?.textContent).toBe("Pagar $700.00");
+    expect(text).toContain("Aprobaste todas las tareas");
+    expect(text).not.toContain("anticipo");
+    expect(Array.from(host.querySelectorAll("button")).some((b) => /Subir foto|Enviar para revisión/.test(b.textContent ?? ""))).toBe(false);
+  });
+});

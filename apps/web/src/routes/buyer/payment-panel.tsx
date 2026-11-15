@@ -37,6 +37,7 @@ export function PaymentPanel({
   viewVersion,
   onChanged,
   release = false,
+  single = false,
 }: {
   token: string;
   milestone: MilestoneView;
@@ -45,6 +46,8 @@ export function PaymentPanel({
   onChanged: () => void;
   /** Balance after the buyer approved the delivery: «Liberar el saldo» with «Enviar a mi banco» first on touch devices. */
   release?: boolean;
+  /** Cleaning: the only payment, due once every task is approved («Pagar $700»). */
+  single?: boolean;
 }) {
   const [localPr, setLocalPr] = useState<PaymentRequestView | null>(null);
   const [busy, setBusy] = useState<PaymentMethod | null>(null);
@@ -58,7 +61,7 @@ export function PaymentPanel({
   useEffect(() => setLocalPr(null), [viewVersion]);
 
   const pr = activeRequest && activeRequest.milestoneId === milestone.id ? activeRequest : localPr;
-  const title = MILESTONE_TITLE[milestone.kind];
+  const title = single ? "El trabajo" : MILESTONE_TITLE[milestone.kind];
 
   const start = useCallback(
     async (method: PaymentMethod) => {
@@ -94,7 +97,7 @@ export function PaymentPanel({
       <Awaiting
         token={token}
         pr={pr}
-        title={release ? "el saldo" : title}
+        title={release && !single ? "el saldo" : title}
         onChanged={onChanged}
         onLocal={setLocalPr}
         onRegenerate={() => void start(pr.method)}
@@ -160,9 +163,16 @@ export function PaymentPanel({
   return (
     <Card className="space-y-4" aria-labelledby="pay-title">
       <div>
-        <CardTitle id="pay-title">{release ? "Liberar el saldo" : `Pagar ${title.toLowerCase()}`}</CardTitle>
+        <CardTitle id="pay-title">
+          {single ? `Pagar ${formatMxn(milestone.amountCents)}` : release ? "Liberar el saldo" : `Pagar ${title.toLowerCase()}`}
+        </CardTitle>
         <p className="text-3xl font-extrabold text-brand-800">{formatMxn(milestone.amountCents)}</p>
-        {release && (
+        {single && (
+          <p className="mt-1 text-sm text-slate-700">
+            Aprobaste todas las tareas. Autoriza el pago en la app de tu banco: el dinero llega directo al prestador.
+          </p>
+        )}
+        {release && !single && (
           <p className="mt-1 text-sm text-slate-700">
             Aprobaste la entrega. Para liberar el saldo, autoriza el pago en la app de tu banco: el dinero llega directo al prestador.
           </p>

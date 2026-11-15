@@ -57,4 +57,27 @@ describe("ProposalCardBody", () => {
     expect(html).not.toContain("Criterios de entrega");
     expect(html).toContain("$20,000");
   });
+  it("limpieza: lista las tareas, muestra pago único y oculta el anticipo", () => {
+    const base = proposal();
+    const p = proposal({
+      terms: {
+        ...base.terms,
+        title: "Limpieza de departamento",
+        totalCents: 70_000,
+        advanceCents: 0,
+        balanceCents: 70_000,
+        acceptanceCriteria: "Cada tarea se revisa y aprueba por separado: 1) Limpiar baño; 2) Limpiar cocina; 3) Trapear pisos.",
+      },
+    });
+    const html = render(p, { role: "SELLER", actions: ["CONFIRM_PROPOSAL"] });
+    expect(html).toContain("<li>Limpiar baño</li>");
+    expect(html).toContain("<li>Limpiar cocina</li>");
+    expect(html).toContain("Pago único al terminar");
+    expect(html).not.toContain("Anticipo");
+    expect(html).not.toContain("Criterios de entrega");
+    const compact = render(p, { role: "SELLER", actions: ["CONFIRM_PROPOSAL"], compact: true });
+    expect(compact).toContain("pago único al terminar");
+    expect(compact).toContain("<b>3</b> tareas");
+    expect(compact).not.toContain("anticipo");
+  });
 });

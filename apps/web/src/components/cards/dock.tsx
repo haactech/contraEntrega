@@ -18,6 +18,7 @@ import { DeliveryCard } from "./delivery-card";
 import { DisputeCard } from "./dispute-card";
 import { CompletedCard } from "./completed-card";
 import { DeliverCard } from "./deliver-lazy";
+import { ChecklistCard } from "./checklist-card";
 import type { CardCtx } from "./types";
 
 /** Proposal card wired to the room: confirm/share (seller) or accept (buyer). */
@@ -83,7 +84,12 @@ export function ProposalContainer({ ctx, proposal, compact }: { ctx: CardCtx; pr
       onOpen={() => ctx.onFocusCard("proposal")}
       acceptSlot={
         source.role === "BUYER" && ba ? (
-          <AcceptForm token={source.token} termsSha256={ba.agreement.termsSha256} onDone={ctx.refresh} />
+          <AcceptForm
+            token={source.token}
+            termsSha256={ba.agreement.termsSha256}
+            onDone={ctx.refresh}
+            singlePayment={ba.serviceType === "CLEANING"}
+          />
         ) : null
       }
     />
@@ -117,6 +123,8 @@ function renderCard(card: DockCard, ctx: CardCtx) {
       return <DisputeCard ctx={ctx} />;
     case "completed":
       return <CompletedCard ctx={ctx} />;
+    case "checklist":
+      return <ChecklistCard ctx={ctx} />;
   }
 }
 
