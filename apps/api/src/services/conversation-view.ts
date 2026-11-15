@@ -37,6 +37,9 @@ export interface StoredTerms {
   dueDate: string | null;
   totalCents: number;
   advanceCents: number;
+  /** Only CLEANING proposals carry these (GENERIC rows, and their hashes, are unchanged). */
+  serviceType?: "CLEANING";
+  tasks?: { title: string; description: string | null }[];
 }
 
 export function parseTerms(row: Pick<ProposalRow, "termsJson">): StoredTerms {

@@ -8,6 +8,7 @@ import {
   ProposalStatusSchema,
   AgreementStatusSchema,
   SellerNextActionSchema,
+  ServiceTypeSchema,
 } from "../enums";
 import { CentsSchema, DateOnlySchema, IsoDateTimeSchema, Sha256HexSchema } from "./common";
 import { BuyerAgreementViewSchema, SellerAgreementViewSchema } from "./views";
@@ -23,6 +24,9 @@ export const ProposalTermsSchema = z.object({
   advanceCents: CentsSchema,
   /** totalCents - advanceCents, computed by the server. */
   balanceCents: CentsSchema,
+  /** Cleaning template: present (CLEANING) only for proposals with a checklist; absent = GENERIC. */
+  serviceType: ServiceTypeSchema.optional(),
+  tasks: z.array(z.object({ title: z.string(), description: z.string().nullable() })).optional(),
 });
 export type ProposalTerms = z.infer<typeof ProposalTermsSchema>;
 

@@ -1,6 +1,9 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { BuyerAgreementView, PaymentRequestView, SellerAgreementView } from "@trato/shared";
+import type { BuyerAgreementView, ConfirmProposalResponse, PaymentRequestView, SellerAgreementView } from "@trato/shared";
+import { setLlmProviderForTests } from "../src/assistant/provider";
+import { settleAssistantTasks } from "../src/assistant/tasks";
+import { ScriptedProvider, buyerSays, newRoom, sellerRoom, sellerSays, turn } from "./assistant-helpers";
 import { setGatewayForTests } from "../src/payments/gateway";
 import { call, login, seedMock } from "./helpers";
 import { FakeGateway } from "./pey-fakes";
@@ -307,5 +310,80 @@ describe("exportación y feed", () => {
     expect(html).toContain("Ajuste solicitado");
     const buyerHtml = await (await call(`/api/public/tratos/${c.token}/export`)).text();
     expect(buyerHtml).toContain("<h2>Tareas</h2>");
+  });
+});
+
+describe("chat: propuesta de limpieza -> acuerdo CLEANING", () => {
+  const cleaningProposal = (tasks: string[], over: Record<string, unknown> = {}) => ({
+    title: "Limpieza de departamento",
+    description: "",
+    acceptanceCriteria: "",
+    totalMxn: 700,
+    advanceMxn: 0,
+    dueDate: null,
+    buyerName: "Mariana",
+    serviceType: "CLEANING" as const,
+    tasks: tasks.map((title) => ({ title, description: null })),
+    ...over,
+  });
+
+  afterEach(async () => {
+    await settleAssistantTasks();
+    setLlmProviderForTests(undefined);
+  });
+
+  it("confirmar crea el trato con tareas; la contraoferta con una tarea más reemplaza el checklist; los chips y el contexto son de limpieza", async () => {
+    const cookie = await login("seller_4");
+    const room = await newRoom(cookie);
+    const provider = new ScriptedProvider((_req, n) =>
+      turn({
+        intent: n === 1 ? "PROPOSE_TERMS" : "REVISE_TERMS",
+        reply: "Propuesta lista",
+        proposal: cleaningProposal(n === 1 ? ["Limpiar baño", "Limpiar cocina"] : ["Limpiar baño", "Limpiar cocina", "Sacar la basura"]),
+      }),
+    );
+    setLlmProviderForTests(provider);
+    await sellerSays(cookie, room, "Limpieza del depa para Mariana, 700, baño y cocina");
+    await settleAssistantTasks();
+    const v1 = (await sellerRoom(cookie, room)).activeProposal!;
+    expect(v1.terms).toMatchObject({ serviceType: "CLEANING", advanceCents: 0, totalCents: 70_000 });
+    expect(v1.terms.tasks).toHaveLength(2);
+
+    const res = await call(`/api/conversations/${room}/proposals/${v1.id}/confirm`, { method: "POST", cookie });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as ConfirmProposalResponse;
+    const seller = out.conversation.agreement as SellerAgreementView;
+    expect(seller.serviceType).toBe("CLEANING");
+    expect(seller.tasks!.map((t) => t.title)).toEqual(["Limpiar baño", "Limpiar cocina"]);
+    expect(seller.milestones).toHaveLength(1);
+    expect(seller.agreement.acceptanceCriteria).toContain("Limpiar cocina");
+    expect(seller.agreement.termsSha256).toBe(out.conversation.activeProposal!.termsSha256);
+    const token = out.shareUrl.split("/t/")[1]!;
+
+    // el comprador pide una tarea más -> propuesta v2 -> el prestador confirma -> tareas reemplazadas
+    await buyerSays(token, "¿Le agregas sacar la basura?");
+    await settleAssistantTasks();
+    const v2 = (await sellerRoom(cookie, room)).activeProposal!;
+    expect(v2.version).toBe(2);
+    expect(v2.terms.tasks).toHaveLength(3);
+    const rev = await call(`/api/conversations/${room}/proposals/${v2.id}/confirm`, { method: "POST", cookie });
+    expect(rev.status).toBe(200);
+    const after = (await getSeller(cookie, seller.agreement.id));
+    expect(after.tasks!.map((t) => t.title)).toEqual(["Limpiar baño", "Limpiar cocina", "Sacar la basura"]);
+    expect(after.agreement.termsVersion).toBe(2);
+    expect(after.milestones).toHaveLength(1);
+    expect(after.events.some((e) => e.type === "TERMS_REVISED")).toBe(true);
+
+    // aceptado: chips de limpieza (sin UPLOAD_EVIDENCE/REQUEST_REVIEW) y contexto con el checklist
+    await acceptCleaning(token);
+    const sellerChips = (await sellerRoom(cookie, room)).allowedActions;
+    expect(sellerChips).toContain("SUBMIT_TASK");
+    expect(sellerChips).not.toContain("UPLOAD_EVIDENCE");
+    expect(sellerChips).not.toContain("REQUEST_REVIEW");
+    await sellerSays(cookie, room, "¿cómo vamos?");
+    await settleAssistantTasks();
+    const last = provider.requests.at(-1)!;
+    expect(JSON.stringify(last.messages)).toContain("Limpiar cocina");
+    expect(JSON.stringify(last.messages)).toContain("CLEANING");
   });
 });

@@ -149,7 +149,7 @@ describe("política y proveedor", () => {
         turn({
           intent: "PROPOSE_TERMS",
           reply: "Aquí está tu propuesta",
-          proposal: { title: "Puerta", description: "", acceptanceCriteria: "Instalada", totalMxn: 100, advanceMxn: 500, dueDate: null, buyerName: "Mariana" },
+          proposal: { title: "Puerta", description: "", acceptanceCriteria: "Instalada", totalMxn: 100, advanceMxn: 500, dueDate: null, buyerName: "Mariana", serviceType: "GENERIC", tasks: [] },
         }),
       ),
     );

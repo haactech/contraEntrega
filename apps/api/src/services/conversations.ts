@@ -1,5 +1,5 @@
 import {
-  CreateAgreementInputSchema,
+  CreateAnyAgreementInputSchema,
   type ActionVia,
   type ConfirmProposalResponse,
   type ConversationAuthorType,
@@ -152,15 +152,28 @@ export async function confirmProposal(
 
   try {
     const t = parseTerms(row);
-    const input = CreateAgreementInputSchema.parse({
-      title: t.title,
-      description: t.description,
-      acceptanceCriteria: t.acceptanceCriteria,
-      buyerName: t.buyerName,
-      ...(t.dueDate ? { dueDate: t.dueDate } : {}),
-      totalCents: t.totalCents,
-      advanceCents: t.advanceCents,
-    });
+    // CLEANING proposals carry their checklist; the same creation/revision functions as the form apply.
+    const input = CreateAnyAgreementInputSchema.parse(
+      t.serviceType === "CLEANING"
+        ? {
+            serviceType: "CLEANING",
+            title: t.title,
+            description: t.description,
+            buyerName: t.buyerName,
+            ...(t.dueDate ? { dueDate: t.dueDate } : {}),
+            totalCents: t.totalCents,
+            tasks: (t.tasks ?? []).map((x) => ({ title: x.title, ...(x.description ? { description: x.description } : {}) })),
+          }
+        : {
+            title: t.title,
+            description: t.description,
+            acceptanceCriteria: t.acceptanceCriteria,
+            buyerName: t.buyerName,
+            ...(t.dueDate ? { dueDate: t.dueDate } : {}),
+            totalCents: t.totalCents,
+            advanceCents: t.advanceCents,
+          },
+    );
     let agreementId = conv.agreementId;
     if (agreementId) await reviseTerms(db, env, sellerId, agreementId, input, now, { via });
     else agreementId = (await createAgreement(db, env, sellerId, input, now, { conversationId: conv.id, via })).agreement.id;

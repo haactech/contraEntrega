@@ -7,6 +7,7 @@ import {
   buildAssistantContext,
   canonicalJson,
   mexicoCityToday,
+  normalizedAcceptanceCriteria,
   sanitizeAssistantTurn,
   sha256Hex,
   type AssistantContextMessage,
@@ -128,6 +129,10 @@ const EVENT_TEXT: Partial<Record<string, (p: Record<string, unknown>) => string>
   DELIVERY_APPROVED: () => "El comprador aprobó la entrega con el botón.",
   DELIVERY_DISPUTED: () => "El comprador reportó un problema con la entrega.",
   AGREEMENT_COMPLETED: () => "El trato quedó completado.",
+  TASK_SUBMITTED: (p) => `El prestador envió a revisión la tarea «${String(p.taskTitle ?? "")}».`,
+  TASK_APPROVED: (p) => `El cliente aprobó la tarea «${String(p.taskTitle ?? "")}» con el botón.`,
+  TASK_ADJUSTMENT_REQUESTED: (p) => `El cliente pidió un ajuste en la tarea «${String(p.taskTitle ?? "")}».`,
+  ALL_TASKS_APPROVED: () => "Todas las tareas están aprobadas; el pago ya se puede autorizar (aún no está pagado).",
 };
 
 function parsePayload(json: string): Record<string, unknown> {
@@ -198,9 +203,32 @@ async function runOnce(env: AppEnv, db: Db, provider: LlmProvider, conversationI
           status: bundle.agreement.status,
           terms: contextTerms(bundle),
           milestones: bundle.milestones.map((m) => ({ kind: m.kind, status: m.status, amountCents: m.amountCents })),
+          ...(bundle.agreement.serviceType === "CLEANING"
+            ? {
+                cleaning: {
+                  serviceType: "CLEANING" as const,
+                  tasks: bundle.tasks.map((t) => ({
+                    title: t.title,
+                    status: t.status,
+                    revision: t.revision,
+                    lastAdjustmentReason:
+                      [...bundle.taskReviews].reverse().find((r) => r.taskId === t.id && r.decision === "REQUEST_ADJUSTMENT")?.comment ?? null,
+                  })),
+                },
+              }
+            : {}),
         }
       : null,
-    openProposal: active ? { version: active.version, status: active.status, terms: parseTerms(active) } : null,
+    openProposal: active
+      ? {
+          version: active.version,
+          status: active.status,
+          terms: parseTerms(active),
+          ...(parseTerms(active).serviceType === "CLEANING"
+            ? { serviceType: "CLEANING" as const, tasks: parseTerms(active).tasks ?? [] }
+            : {}),
+        }
+      : null,
     allowedActions: byRole,
     messages: timeline.map((x) => x.msg),
   });
@@ -253,7 +281,7 @@ async function runOnce(env: AppEnv, db: Db, provider: LlmProvider, conversationI
 
   const san = sanitizeAssistantTurn(result.value, {
     allowed: speaker === "BUYER" ? byRole.buyer : byRole.seller,
-    state: assistantFactsFromStatuses(advance?.status, balance?.status),
+    state: assistantFactsFromStatuses(advance?.status, balance?.status, bundle?.agreement.serviceType === "CLEANING" ? bundle.tasks : null),
     normalize: {
       defaultBuyerName: bundle?.agreement.buyerName ?? (active ? parseTerms(active).buyerName : null),
       today: mexicoCityToday(now).date,
@@ -267,14 +295,19 @@ async function runOnce(env: AppEnv, db: Db, provider: LlmProvider, conversationI
   const wantsProposal = turn.intent === "PROPOSE_TERMS" || turn.intent === "REVISE_TERMS";
   if (normalized && wantsProposal && revisable) {
     const i = normalized.input;
+    const cleaning = normalized.serviceType === "CLEANING";
+    // CLEANING: no advance; criteria generated from the checklist; the checklist travels with the proposal.
     const terms = {
       title: i.title,
       description: i.description ?? "",
-      acceptanceCriteria: i.acceptanceCriteria,
+      acceptanceCriteria: normalizedAcceptanceCriteria(normalized),
       buyerName: i.buyerName,
       dueDate: i.dueDate ?? null,
       totalCents: i.totalCents,
-      advanceCents: i.advanceCents,
+      advanceCents: "advanceCents" in i ? i.advanceCents : 0,
+      ...(cleaning
+        ? { serviceType: "CLEANING" as const, tasks: normalized.tasks.map((t) => ({ title: t.title, description: t.description })) }
+        : {}),
     };
     const termsJson = canonicalJson(terms);
     await appendProposal(env, conversationId, termsJson, await sha256Hex(termsJson), turn.reply, llmCallId);
