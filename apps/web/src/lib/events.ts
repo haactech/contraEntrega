@@ -103,6 +103,8 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
     }
     case "AGREEMENT_COMPLETED":
       return { title: "Trato completado", tone: "success" };
+    case "TERMS_REVISED":
+      return { title: "Términos actualizados", detail: "Se propuso una nueva versión antes de aceptar.", tone: "neutral" };
     default: {
       const _never: never = type;
       return { title: String(_never), tone: "neutral" };

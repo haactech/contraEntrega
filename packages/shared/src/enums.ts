@@ -93,6 +93,8 @@ export const EVENT_TYPES = [
   "DELIVERY_APPROVED",
   "DELIVERY_DISPUTED",
   "AGREEMENT_COMPLETED",
+  /** v0.3: terms revised (DRAFT|SHARED only) before acceptance. Visible to the buyer. */
+  "TERMS_REVISED",
 ] as const;
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;
@@ -173,3 +175,44 @@ export type BuyerNextAction = z.infer<typeof BuyerNextActionSchema>;
 export const PAYMENTS_MODES = ["mock", "live"] as const;
 export const PaymentsModeSchema = z.enum(PAYMENTS_MODES);
 export type PaymentsMode = z.infer<typeof PaymentsModeSchema>;
+
+/* ---------------------------------------------------- v0.3 conversational */
+
+export const CONVERSATION_AUTHOR_TYPES = ["SELLER", "BUYER", "ASSISTANT"] as const;
+export const ConversationAuthorTypeSchema = z.enum(CONVERSATION_AUTHOR_TYPES);
+export type ConversationAuthorType = z.infer<typeof ConversationAuthorTypeSchema>;
+
+export const MESSAGE_KINDS = ["TEXT", "PROPOSAL"] as const;
+export const MessageKindSchema = z.enum(MESSAGE_KINDS);
+export type MessageKind = z.infer<typeof MessageKindSchema>;
+
+export const PROPOSAL_STATUSES = ["OPEN", "SELLER_CONFIRMED", "ACCEPTED", "SUPERSEDED"] as const;
+export const ProposalStatusSchema = z.enum(PROPOSAL_STATUSES);
+export type ProposalStatus = z.infer<typeof ProposalStatusSchema>;
+
+export const ASSISTANT_INTENTS = [
+  "PROPOSE_TERMS",
+  "REVISE_TERMS",
+  "ASK_CLARIFICATION",
+  "SUGGEST_ACTION",
+  "ANSWER",
+  "NONE",
+] as const;
+export const AssistantIntentSchema = z.enum(ASSISTANT_INTENTS);
+export type AssistantIntent = z.infer<typeof AssistantIntentSchema>;
+
+export const PROPOSAL_FIELDS = [
+  "title",
+  "total",
+  "advance",
+  "acceptanceCriteria",
+  "buyerName",
+  "dueDate",
+] as const;
+export const ProposalFieldSchema = z.enum(PROPOSAL_FIELDS);
+export type ProposalField = z.infer<typeof ProposalFieldSchema>;
+
+/** Channel through which a human action reached the server (stored in event payloads). */
+export const ACTION_VIAS = ["web", "chat", "mcp"] as const;
+export const ActionViaSchema = z.enum(ACTION_VIAS);
+export type ActionVia = z.infer<typeof ActionViaSchema>;

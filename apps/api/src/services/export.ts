@@ -55,6 +55,7 @@ const EVENT_TITLE: Record<EventType, string> = {
   DELIVERY_APPROVED: "Trabajo recibido (el saldo se paga por separado)",
   DELIVERY_DISPUTED: "Problema reportado",
   AGREEMENT_COMPLETED: "Trato completado",
+  TERMS_REVISED: "Términos actualizados antes de la aceptación",
 };
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
