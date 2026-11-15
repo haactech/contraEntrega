@@ -49,6 +49,29 @@ export default function BuyerRoute() {
     [setData],
   );
 
+  // Signed evidence URLs expire after 15 min and a 304 would keep the stale ones:
+  // force a GET without If-None-Match on image errors (throttled) or after a long hidden spell.
+  const lastForced = useRef(0);
+  const forceRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - lastForced.current < 30_000) return;
+    lastForced.current = now;
+    etag.current = null;
+    void refresh();
+  }, [refresh]);
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else if (hiddenAt !== null && Date.now() - hiddenAt > 10 * 60_000) {
+        hiddenAt = null;
+        forceRefresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [forceRefresh]);
+
   // Detect transitions to PAID to confirm clearly ("Anticipo recibido" / "Saldo pagado").
   const prevPaid = useRef<Set<MilestoneKind> | null>(null);
   const [justPaid, setJustPaid] = useState<MilestoneKind | null>(null);
@@ -151,7 +174,7 @@ export default function BuyerRoute() {
       {showDelivery && (
         <Card className="space-y-3">
           <CardTitle>Entrega del prestador</CardTitle>
-          <Gallery items={deliveryPhotos} />
+          <Gallery items={deliveryPhotos} onImageError={forceRefresh} />
           {latestReviewRequestNote(data) && (
             <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-800">{latestReviewRequestNote(data)}</p>
           )}
