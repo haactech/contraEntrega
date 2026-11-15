@@ -20,7 +20,7 @@ import {
 } from "@/lib/conversation";
 import { sourceKey, useConversation, type RoomSource } from "@/hooks/use-conversation";
 import { useStickToBottom } from "@/hooks/use-stick-to-bottom";
-import { useMode } from "@/hooks/use-mode";
+import { useDemoBannerVisible } from "@/hooks/use-mode";
 import { useToast } from "@/components/ui/toast";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBox, NoCustodyNotice } from "@/components/layout";
@@ -47,7 +47,7 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   const convo = useConversation(source);
   const { data: view, error, loading, applyView, forceRefresh } = convo;
   const toast = useToast();
-  const mode = useMode();
+  const demoBanner = useDemoBannerVisible();
 
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [share, setShare] = useState<ShareLinks | null>(null);
@@ -307,7 +307,7 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   return (
     <div
       className="mx-auto flex w-full max-w-xl flex-col bg-slate-50"
-      style={{ height: mode === "mock" ? "calc(100dvh - 1.75rem)" : "100dvh" }}
+      style={{ height: demoBanner ? "calc(100dvh - 1.75rem)" : "100dvh" }}
     >
       <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
         {isSeller ? (
