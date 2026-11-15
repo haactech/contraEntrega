@@ -2,7 +2,10 @@ import { BUYER_HIDDEN_EVENT_TYPES, formatMxn, type EventType } from "@trato/shar
 import type { AppEnv } from "../env";
 import { toBase64Url } from "../lib/crypto";
 import { escapeHtml as h } from "../lib/html";
+import { createDb } from "../db/client";
 import type { AgreementBundle } from "../repos/agreements";
+import { loadTranscriptByAgreement, SYSTEM_AUTHOR } from "../repos/conversations";
+import { parseTerms as parseProposalTerms } from "./conversation-view";
 import { eventViews, evidenceView, reviewView } from "./views";
 
 export type ExportAudience = "seller" | "buyer";
@@ -37,6 +40,13 @@ const MILESTONE_STATUS: Record<string, string> = {
 const MILESTONE_KIND: Record<string, string> = { ADVANCE: "Anticipo", BALANCE: "Saldo contra entrega" };
 const METHOD: Record<string, string> = { CODI_QR: "CoDi (código QR)", CODI_PN: "CoDi (solicitud push)" };
 const ACTOR: Record<string, string> = { SELLER: "Prestador", BUYER: "Comprador", SYSTEM: "Sistema", PROVIDER: "Proveedor de pagos" };
+
+const PROPOSAL_STATUS: Record<string, string> = {
+  OPEN: "Abierta (pendiente de confirmar por el prestador)",
+  SELLER_CONFIRMED: "Confirmada por el prestador, pendiente de aceptación",
+  ACCEPTED: "Aceptada por el comprador",
+  SUPERSEDED: "Reemplazada por una versión posterior",
+};
 
 const EVENT_TITLE: Record<EventType, string> = {
   AGREEMENT_CREATED: "Trato creado",
@@ -128,6 +138,7 @@ export async function renderExport(
   const reviews = b.reviews.map(reviewView);
   const hidden: readonly string[] = audience === "buyer" ? BUYER_HIDDEN_EVENT_TYPES : [];
   const events = eventViews(b.events.filter((e) => !hidden.includes(e.eventType)), false);
+  const transcript = await loadTranscriptByAgreement(createDb(env.DB), a.id);
   const paid = b.paymentRequests.filter((p) => p.status === "PAID");
 
   const rounds = [...new Set(evidence.map((e) => e.deliveryRound))].sort((x, y) => x - y);
@@ -147,6 +158,35 @@ export async function renderExport(
               .join("")}</div>`;
           })
           .join("");
+
+  const proposalsHtml = !transcript || transcript.proposals.length === 0
+    ? `<p class="muted">Sin versiones de propuesta registradas.</p>`
+    : `<ol class="timeline">${transcript.proposals
+        .map((p) => {
+          const pt = parseProposalTerms(p);
+          const adv = pt.advanceCents;
+          return (
+            `<li><strong>Versión ${h(p.version)}</strong> · ${h(PROPOSAL_STATUS[p.status] ?? p.status)}${p.status === "ACCEPTED" ? " · <strong>propuesta aceptada</strong>" : ""}` +
+            `<br><span class="muted">Total ${h(formatMxn(pt.totalCents))} · Anticipo ${h(formatMxn(adv))} · Saldo ${h(formatMxn(pt.totalCents - adv))} · Entrega: ${h(pt.dueDate ?? "Sin fecha")}</span>` +
+            `<br><span class="muted">Criterios de aceptación: </span><span class="pre">${h(pt.acceptanceCriteria)}</span>` +
+            `<br><span class="muted">SHA-256 de los términos: </span><span class="code">${h(p.termsSha256)}</span>` +
+            `<br><span class="muted">Creada: ${h(fmtDate(p.createdAt))} · Confirmada por el prestador: ${h(fmtDate(p.confirmedAt))}</span></li>`
+          );
+        })
+        .join("")}</ol>`;
+  const authorLabel = (type: string, name: string): string =>
+    type === "SELLER" ? "Prestador" : type === "BUYER" ? "Comprador" : name === SYSTEM_AUTHOR ? "Sistema" : "Trato (asistente IA)";
+  const conversationHtml = !transcript || transcript.messages.length === 0
+    ? `<p class="muted">Sin conversación registrada.</p>`
+    : `<ol class="timeline">${transcript.messages
+        .map((m) => {
+          const ai = m.authorType === "ASSISTANT" && m.authorName !== SYSTEM_AUTHOR;
+          return (
+            `<li><strong>${h(authorLabel(m.authorType, m.authorName))}</strong>${m.authorType === "SELLER" || m.authorType === "BUYER" ? ` <span class="muted">(${h(m.authorName)})</span>` : ""} <span class="muted">— ${h(fmtDate(m.createdAt))}</span>` +
+            `<br><span class="pre">${h(m.bodyText)}</span>${ai ? `<br><em class="muted">Asistente IA: propone, no decide</em>` : ""}</li>`
+          );
+        })
+        .join("")}</ol>`;
 
   const body = `
 <div class="bar no-print"><span class="muted">Registro del trato ${h(a.code)}</span><button type="button" id="print-btn">Imprimir / Guardar PDF</button></div>
@@ -175,6 +215,12 @@ ${dl([
   ["Aceptado por", a.buyerAcceptedName ? h(a.buyerAcceptedName) : "Aún sin aceptar"],
   ["Fecha de aceptación", h(fmtDate(a.buyerAcceptedAt))],
 ])}
+
+<h2>Versiones de la propuesta</h2>
+${proposalsHtml}
+
+<h2>Conversación</h2>
+${conversationHtml}
 
 <h2>Hitos</h2>
 <table><thead><tr><th>Hito</th><th>Monto</th><th>Estado</th><th>Entrega</th><th>Aprobado</th><th>Pagado</th></tr></thead><tbody>

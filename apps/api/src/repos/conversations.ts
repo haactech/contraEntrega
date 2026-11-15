@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { ConversationAuthorType, MessageKind } from "@trato/shared";
 import { rawStmt, type Db } from "../db/client";
 import { conversations, messages, proposals } from "../db/schema";
@@ -107,4 +107,18 @@ export async function messageSeq(d1: D1Database, id: string): Promise<number> {
   const row = await d1.prepare("SELECT seq FROM messages WHERE id = ?").bind(id).first<{ seq: number }>();
   if (!row) throw new Error("Mensaje no encontrado tras insertarlo.");
   return row.seq;
+}
+
+/** Full, unpaginated room history of an agreement for the export (null when it has no conversation). */
+export async function loadTranscriptByAgreement(
+  db: Db,
+  agreementId: string,
+): Promise<{ messages: MessageRow[]; proposals: ProposalRow[] } | null> {
+  const conv = await findConversationByAgreement(db, agreementId);
+  if (!conv) return null;
+  const [msgs, props] = await Promise.all([
+    db.select().from(messages).where(eq(messages.conversationId, conv.id)).orderBy(asc(messages.seq)),
+    db.select().from(proposals).where(eq(proposals.conversationId, conv.id)).orderBy(asc(proposals.version)),
+  ]);
+  return { messages: msgs, proposals: props };
 }
