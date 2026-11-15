@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Copy, FileDown, Link2, RefreshCw, Share2, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Copy, FileDown, Link2, MessageSquare, RefreshCw, Share2, TriangleAlert } from "lucide-react";
 import {
   API_ROUTES,
   APP_ROUTES,
@@ -53,6 +53,18 @@ export default function AgreementRoute() {
   useEffect(() => {
     if (isApiError(error, "UNAUTHORIZED")) navigate(APP_ROUTES.home, { replace: true });
   }, [error, navigate]);
+
+  // Every agreement has a room (v0.3). The v0.2 view has no conversation id, so look it up.
+  const [roomId, setRoomId] = useState<string | null>(null);
+  useEffect(() => {
+    const c = new AbortController();
+    setRoomId(null);
+    api
+      .listConversations(c.signal)
+      .then((r) => setRoomId(r.conversations.find((x) => x.agreementId === id)?.id ?? null))
+      .catch(() => undefined); // endpoint not deployed yet: no link
+    return () => c.abort();
+  }, [id]);
 
   const currentLinks: ShareLinks | null = useMemo(() => {
     if (data?.shareUrl && data.whatsappUrl) return { shareUrl: data.shareUrl, whatsappUrl: data.whatsappUrl };
@@ -132,6 +144,15 @@ export default function AgreementRoute() {
           {a.dueDate ? ` · entrega ${formatDate(a.dueDate)}` : ""}
         </p>
       </div>
+
+      {roomId && (
+        <Link
+          to={APP_ROUTES.room(roomId)}
+          className="flex min-h-11 items-center gap-2 rounded-xl bg-brand-50 px-3 font-semibold text-brand-800"
+        >
+          <MessageSquare className="size-5" aria-hidden /> Abrir la sala de este trato
+        </Link>
+      )}
 
       <Card>
         <Stepper steps={[...PROGRESS_STEPS]} current={progress.current} done={progress.done} />
