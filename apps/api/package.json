@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "node scripts/ensure-assets.mjs && wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy --var PUBLIC_APP_URL:https://trato.adanhermes23.workers.dev",
+    "db:migrate:remote": "wrangler d1 migrations apply trato-db --remote",
+    "db:seed:mock:remote": "wrangler d1 execute trato-db --remote --file=../../infra/seed/mock.sql",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",

@@ -4,6 +4,9 @@
 
 Prototipo de hackatón: acuerdos de dos hitos (anticipo + saldo) entre un prestador y un comprador, cobrados con **CoDi** vía la API de [pey](https://docs.pey.mx). El dinero llega directamente a la cuenta del prestador; **Trato no retiene fondos ni garantiza devoluciones**.
 
+**Demo en vivo:** https://trato.adanhermes23.workers.dev (modo demo: pagos simulados, sin dinero real; PIN `1234`).
+Recorridos de prueba: `docs/prueba-local.md` (incluye limpieza por tareas con chat, §3c).
+
 ## Estructura
 
 ```
