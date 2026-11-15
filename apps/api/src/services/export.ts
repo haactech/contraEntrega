@@ -215,7 +215,11 @@ export async function renderExport(
           const adv = pt.advanceCents;
           return (
             `<li><strong>Versión ${h(p.version)}</strong> · ${h(PROPOSAL_STATUS[p.status] ?? p.status)}${p.status === "ACCEPTED" ? " · <strong>propuesta aceptada</strong>" : ""}` +
-            `<br><span class="muted">Total ${h(formatMxn(pt.totalCents))} · Anticipo ${h(formatMxn(adv))} · Saldo ${h(formatMxn(pt.totalCents - adv))} · Entrega: ${h(pt.dueDate ?? "Sin fecha")}</span>` +
+            `<br><span class="muted">Total ${h(formatMxn(pt.totalCents))} · ${
+              (pt as { serviceType?: string }).serviceType === "CLEANING"
+                ? `Pago único al terminar · Tareas: ${h(((pt as { tasks?: { title: string }[] }).tasks ?? []).map((x) => x.title).join(", "))}`
+                : `Anticipo ${h(formatMxn(adv))} · Saldo ${h(formatMxn(pt.totalCents - adv))}`
+            } · Entrega: ${h(pt.dueDate ?? "Sin fecha")}</span>` +
             `<br><span class="muted">Criterios de aceptación: </span><span class="pre">${h(pt.acceptanceCriteria)}</span>` +
             `<br><span class="muted">SHA-256 de los términos: </span><span class="code">${h(p.termsSha256)}</span>` +
             `<br><span class="muted">Creada: ${h(fmtDate(p.createdAt))} · Confirmada por el prestador: ${h(fmtDate(p.confirmedAt))}</span></li>`

@@ -139,7 +139,7 @@ function canCreateIgnoringAccount(
   }
   if (milestone.status === "READY_TO_CHARGE" && agreement.status === "IN_PROGRESS") return OK;
   if (milestone.status === "WAITING_DELIVERY" || milestone.status === "WAITING_BUYER_REVIEW") {
-    return fail("INVALID_STATE", "El saldo se cobra después de que el comprador apruebe la entrega.");
+    return fail("INVALID_STATE", "Este pago se habilita cuando el comprador apruebe el trabajo.");
   }
   return fail("INVALID_STATE", "El saldo no está disponible para cobro.");
 }

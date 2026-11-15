@@ -107,13 +107,15 @@ export interface ActionChip {
 const SECONDARY_ACTIONS: ReadonlySet<AllowedAction> = new Set(["EXPORT", "REFRESH_PAYMENT", "SHARE_LINK"]);
 
 /** Deterministic chips from the server's `allowedActions` (never from the AI). */
-export function chipsFromActions(actions: readonly AllowedAction[]): ActionChip[] {
+/** `singlePayment`: CLEANING agreements have one payment, so «Pagar saldo» reads «Pagar». */
+export function chipsFromActions(actions: readonly AllowedAction[], opts: { singlePayment?: boolean } = {}): ActionChip[] {
   const seen = new Set<AllowedAction>();
   const chips: ActionChip[] = [];
   for (const action of actions) {
     if (seen.has(action)) continue;
     seen.add(action);
-    chips.push({ action, label: ALLOWED_ACTION_LABELS[action], primary: !SECONDARY_ACTIONS.has(action) });
+    const label = opts.singlePayment && action === "PAY_BALANCE" ? "Pagar" : ALLOWED_ACTION_LABELS[action];
+    chips.push({ action, label, primary: !SECONDARY_ACTIONS.has(action) });
   }
   return chips;
 }

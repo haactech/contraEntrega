@@ -248,7 +248,7 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   const isSeller = view.role === "SELLER";
   const agreementId = view.agreement?.agreement.id ?? null;
   const cards = activeCards(view);
-  const chips = chipsFromActions(view.allowedActions);
+  const chips = chipsFromActions(view.allowedActions, { singlePayment: view.agreement?.serviceType === "CLEANING" });
   const emptyRoom = view.feed.length === 0 && visiblePending.length === 0;
   const canAttach = isSeller && (view.allowedActions.includes("UPLOAD_EVIDENCE") || view.allowedActions.includes("REDELIVER"));
   const placeholder = isSeller && view.feed.length === 0 ? SELLER_EMPTY_PLACEHOLDER : "Escribe un mensaje…";

@@ -14,7 +14,8 @@ export function CompletedCard({ ctx }: { ctx: CardCtx }) {
       <CheckCircle2 className="mx-auto size-10 text-brand-700" aria-hidden />
       <CardTitle>Trato completado</CardTitle>
       <p className="text-sm text-slate-800">
-        {a.agreement.title} · {formatMxn(a.agreement.totalCents)}. Anticipo y saldo pagados. El comprobante incluye la conversación,
+        {a.agreement.title} · {formatMxn(a.agreement.totalCents)}.{" "}
+        {a.serviceType === "CLEANING" ? "Todas las tareas aprobadas y pago recibido." : "Anticipo y saldo pagados."} El comprobante incluye la conversación,
         las versiones de la propuesta, las evidencias, las revisiones y los pagos.
       </p>
       <a

@@ -321,7 +321,7 @@ function TaskCard({
 
       <Dialog open={approveOpen} onClose={() => setApproveOpen(false)} title={`¿Aprobar «${task.title}»?`}>
         <div className="space-y-3">
-          <p>Aprobar esta tarea no paga por sí solo. El pago se libera hasta que todas las tareas estén aprobadas.</p>
+          <p>Aprobar esta tarea no paga por sí solo. El pago se habilita cuando todas las tareas estén aprobadas y lo autorizas en tu banco.</p>
           {error && <p role="alert" className="rounded-xl bg-red-50 p-2 text-sm font-medium text-red-800">{error}</p>}
           <Button size="lg" block loading={busy === "approve"} onClick={() => void approve()}>
             Sí, aprobar
