@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trato",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // nodejs_compat no es necesario: solo se usan WebCrypto, fetch y Hono.
+  // (standardwebhooks en la etapa 2b puede requerirlo; se activará entonces si hace falta.)
+  "observability": { "enabled": true },
+  "assets": {
+    // La SPA vive en apps/web/dist. scripts/ensure-assets.mjs crea un index.html
+    // placeholder si el directorio aún no existe (dist está en .gitignore).
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trato-db",
+      "database_id": "1fb8c1dd-ab29-4f6b-b7b4-a03a1d8c0f98",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "EVIDENCE", "bucket_name": "trato-evidence" }],
+  "ratelimits": [
+    { "name": "RL_PUBLIC_READ", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_PUBLIC_WRITE", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "vars": {
+    "PAYMENTS_MODE": "mock",
+    "PUBLIC_APP_URL": "http://localhost:8787",
+    "PEY_BASE_URL": "https://api.pey.mx"
+  }
+}

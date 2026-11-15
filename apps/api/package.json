@@ -1,0 +1,34 @@
+{
+  "name": "@trato/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/ensure-assets.mjs && wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply trato-db --local",
+    "db:seed:mock:local": "wrangler d1 execute trato-db --local --file=../../infra/seed/mock.sql",
+    "db:seed:accounts:local": "wrangler d1 execute trato-db --local --file=../../infra/seed/accounts.local.sql",
+    "register-accounts": "tsx scripts/register-accounts.ts",
+    "verify-accounts": "tsx scripts/verify-accounts.ts"
+  },
+  "dependencies": {
+    "@trato/shared": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.18",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.8.2",
+    "@cloudflare/workers-types": "5.20261115.1",
+    "@types/node": "^22",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.162.0"
+  }
+}

@@ -1,0 +1,7 @@
+[
+  { "alias": "Cuenta demo 1", "name": "Titular Ficticio Uno", "clabe": "000000000000000000", "entity": "PERSON", "sellerDisplayName": "Herrería Don Chuy", "trade": "Herrería", "peyBankAccountId": null },
+  { "alias": "Cuenta demo 2", "name": "Titular Ficticio Dos", "clabe": "000000000000000000", "entity": "PERSON", "sellerDisplayName": "Carpintería Lupita", "trade": "Carpintería", "peyBankAccountId": null },
+  { "alias": "Cuenta demo 3", "name": "Titular Ficticio Tres", "clabe": "000000000000000000", "entity": "PERSON", "sellerDisplayName": "Plomería Ramírez", "trade": "Plomería", "peyBankAccountId": null },
+  { "alias": "Cuenta demo 4", "name": "Titular Ficticio Cuatro", "clabe": "000000000000000000", "entity": "PERSON", "sellerDisplayName": "Electricista Sofía", "trade": "Electricidad", "peyBankAccountId": null },
+  { "alias": "Cuenta demo 5", "name": "Titular Ficticio Cinco", "clabe": "000000000000000000", "entity": "PERSON", "sellerDisplayName": "Pintura Hermanos Ortega", "trade": "Pintura", "peyBankAccountId": null }
+]

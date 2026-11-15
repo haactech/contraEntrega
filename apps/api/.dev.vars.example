@@ -1,0 +1,7 @@
+# Copia a .dev.vars (gitignored). En producción: `wrangler secret put <NAME>`.
+PEY_API_KEY=pey_test_replace_me
+# Formato Standard Webhooks: "whsec_" + base64
+PEY_WEBHOOK_SECRET=whsec_dGVzdC1zZWNyZXQtcmVwbGFjZS1tZS0zMi1ieXRlcyE=
+# >= 32 caracteres aleatorios (openssl rand -base64 32)
+SESSION_SECRET=replace-with-at-least-32-random-characters
+DEMO_SELLER_PIN=1234
