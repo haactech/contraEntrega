@@ -98,25 +98,6 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
     [view, convo.post, applyView, stick],
   );
 
-  const ctx: CardCtx | null = useMemo(
-    () =>
-      view
-        ? {
-            view,
-            source,
-            refresh: forceRefresh,
-            applyView,
-            onShare: (links) => {
-              setShare(links);
-              setShareOpen(true);
-            },
-            reviewRequest,
-          }
-        : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, source.role, forceRefresh, applyView, reviewRequest],
-  );
-
   const focusCard = useCallback((kind: DockKind) => {
     setDockCollapsed(false);
     window.setTimeout(() => {
@@ -129,6 +110,26 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
     }, 30);
   }, []);
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
+
+  const ctx: CardCtx | null = useMemo(
+    () =>
+      view
+        ? {
+            view,
+            source,
+            refresh: forceRefresh,
+            applyView,
+            onShare: (links) => {
+              setShare(links);
+              setShareOpen(true);
+            },
+            onFocusCard: (k) => focusCard(k),
+            reviewRequest,
+          }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view, source.role, forceRefresh, applyView, reviewRequest, focusCard],
+  );
 
   const attach = useCallback(
     async (files: File[]) => {

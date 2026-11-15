@@ -13,5 +13,5 @@ export default defineConfig({
     proxy: { "/api": { target: "http://localhost:8787", changeOrigin: false } },
   },
   build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },
-  test: { environment: "happy-dom", include: ["src/**/*.test.ts"] },
+  test: { environment: "happy-dom", include: ["src/**/*.test.{ts,tsx}"] },
 });

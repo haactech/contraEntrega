@@ -12,6 +12,8 @@ export interface CardCtx {
   applyView: (v: ConversationView) => void;
   /** Seller: open the share sheet. */
   onShare: (links: ShareLinks) => void;
+  /** Scroll to / highlight a docked card. */
+  onFocusCard: (kind: import("@/lib/conversation").DockKind) => void;
   /** Buyer: a chip asked to open a review dialog. */
   reviewRequest: { kind: "APPROVE" | "DISPUTE"; nonce: number } | null;
 }
