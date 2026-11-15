@@ -41,7 +41,9 @@ devRoutes.post("/simulate-payment", async (c) => {
   }
 
   const now = Date.now();
-  const transactionId = fakeUlid(now);
+  // Push (PN): pey returns the transactionId when the request is created and the webhook
+  // carries that same id. QR: the transaction is born when the payer scans, so it is new.
+  const transactionId = pr.method === "CODI_PN" && pr.providerTransactionId ? pr.providerTransactionId : fakeUlid(now);
   const common = {
     amount: pr.amountCents / 100,
     apiKeyId: "mock_api_key",

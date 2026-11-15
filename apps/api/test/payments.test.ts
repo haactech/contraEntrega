@@ -524,6 +524,20 @@ describe("simulate-payment", () => {
     expect(receipts?.n).toBe(1);
   });
 
+  it("push (CODI_PN) en modo mock -> PAID con el transactionId emitido al crear la solicitud", async () => {
+    setGatewayForTests(null); // real MockPeyGateway
+    const a = await acceptedAgreement();
+    const created = await json<PaymentRequestView>(await createPr(a.token, a.advanceId, { method: "CODI_PN", phoneNumber: "5512345678" }));
+    const txBefore = (await prRow(created.id)).provider_transaction_id;
+    expect(txBefore).toBeTruthy();
+    const res = await call("/api/dev/simulate-payment", { method: "POST", json: { paymentRequestId: created.id } });
+    expect(await res.json()).toEqual({ ok: true, processingStatus: "PROCESSED" });
+    const row = await prRow(created.id);
+    expect(row.status).toBe("PAID");
+    expect(row.provider_transaction_id).toBe(txBefore);
+    expect(await agreementStatus(a.id)).toBe("IN_PROGRESS");
+  });
+
   it("PR inexistente -> 404", async () => {
     const res = await call("/api/dev/simulate-payment", { method: "POST", json: { paymentRequestId: "nope" } });
     expect(res.status).toBe(404);
