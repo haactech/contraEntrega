@@ -4,12 +4,13 @@ import { loadBundle } from "../repos/agreements";
 import { createForBuyer, refreshForBuyer } from "../services/payments";
 import { acceptAgreement } from "../services/public";
 import { submitReview } from "../services/review";
+import { reviewTask } from "../services/tasks";
 import { MCP_VIA, buyerAgreementOf, type McpHandlers } from "./context";
 import { actionsFor, buyerOutput } from "./views";
 
 type BuyerHandlers = Pick<
   McpHandlers,
-  "buyer_get_agreement" | "buyer_accept" | "buyer_review" | "buyer_create_payment_request" | "buyer_refresh_payment"
+  "buyer_get_agreement" | "buyer_accept" | "buyer_review" | "review_task" | "buyer_create_payment_request" | "buyer_refresh_payment"
 >;
 
 const via = { via: MCP_VIA } as const;
@@ -43,6 +44,13 @@ export const buyerHandlers: BuyerHandlers = {
       }),
     );
     await submitReview(ctx.db, ctx.env, agreementId, body, ctx.now, via);
+    return buyerOutput(ctx.env, ctx.db, agreementId, ctx.now);
+  },
+
+  async review_task(ctx, input) {
+    // The registry already rejected the owner's own key (FORBIDDEN) before getting here.
+    const agreementId = buyerAgreementOf(ctx);
+    await reviewTask(ctx.db, ctx.env, agreementId, input.taskId, input.decision, input.reason, ctx.now, via);
     return buyerOutput(ctx.env, ctx.db, agreementId, ctx.now);
   },
 

@@ -6,7 +6,7 @@ import { createDb } from "../db/client";
 import type { AgreementBundle } from "../repos/agreements";
 import { loadTranscriptByAgreement, SYSTEM_AUTHOR } from "../repos/conversations";
 import { parseTerms as parseProposalTerms } from "./conversation-view";
-import { eventViews, evidenceView, reviewView } from "./views";
+import { eventViews, evidenceView, reviewView, taskViews } from "./views";
 
 export type ExportAudience = "seller" | "buyer";
 
@@ -38,6 +38,7 @@ const MILESTONE_STATUS: Record<string, string> = {
   PAID: "Pagado",
 };
 const MILESTONE_KIND: Record<string, string> = { ADVANCE: "Anticipo", BALANCE: "Saldo contra entrega" };
+const CLEANING_KIND: Record<string, string> = { BALANCE: "Pago al terminar" };
 const METHOD: Record<string, string> = { CODI_QR: "CoDi (código QR)", CODI_PN: "CoDi (solicitud push)" };
 const ACTOR: Record<string, string> = { SELLER: "Prestador", BUYER: "Comprador", SYSTEM: "Sistema", PROVIDER: "Proveedor de pagos" };
 
@@ -66,6 +67,17 @@ const EVENT_TITLE: Record<EventType, string> = {
   DELIVERY_DISPUTED: "Problema reportado",
   AGREEMENT_COMPLETED: "Trato completado",
   TERMS_REVISED: "Términos actualizados antes de la aceptación",
+  TASK_SUBMITTED: "Tarea enviada a revisión",
+  TASK_APPROVED: "Tarea aprobada",
+  TASK_ADJUSTMENT_REQUESTED: "Ajuste solicitado",
+  ALL_TASKS_APPROVED: "Trabajo aprobado. Ya se puede pagar (la aprobación no es un pago)",
+};
+
+const TASK_STATUS: Record<string, string> = {
+  TODO: "Por hacer",
+  IN_REVIEW: "Esperando aprobación",
+  NEEDS_ADJUSTMENT: "Necesita ajuste",
+  APPROVED: "Aprobada",
 };
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
@@ -82,6 +94,11 @@ function parseTerms(json: string | null): Record<string, unknown> {
 
 function eventDetail(type: EventType, p: Record<string, unknown>): string {
   const parts: string[] = [];
+  const taskTitle = str(p["taskTitle"]);
+  if (taskTitle) {
+    const rev = num(p["revision"]);
+    parts.push(`tarea «${taskTitle}»${rev !== null ? ` (intento ${rev})` : ""}`);
+  }
   const kind = str(p["milestoneKind"]);
   if (kind) parts.push(MILESTONE_KIND[kind] ?? kind);
   const round = num(p["deliveryRound"]);
@@ -159,6 +176,37 @@ export async function renderExport(
           })
           .join("");
 
+  const cleaning = a.serviceType === "CLEANING";
+  const tasks = (await taskViews(env, b, now, audience === "seller")) ?? [];
+  const thumb = (e: (typeof evidence)[number], alt: string): string =>
+    `<div class="thumb"><img src="${h(e.url)}" alt="${h(alt)}" loading="lazy">` +
+    `<div>${e.kind === "BEFORE" ? "Antes" : "Resultado"} · ${h(e.mimeType)} · ${Math.max(1, Math.round(e.sizeBytes / 1024))} KB${e.submitted ? "" : " · sin enviar"}</div>` +
+    `<div class="code">SHA-256: ${h(e.sha256)}</div><div class="muted">${h(fmtDate(e.createdAt))}</div></div>`;
+  const tasksHtml = tasks
+    .map((t) => {
+      const revs = [...new Set([...t.evidence.map((e) => e.revisionNumber ?? 1), ...t.reviews.map((r) => r.revisionNumber)])].sort((x, y) => x - y);
+      const body = revs.length === 0 ? `<p class="muted">Sin fotos ni revisiones todavía.</p>` : revs
+        .map((r) => {
+          const photos = t.evidence.filter((e) => (e.revisionNumber ?? 1) === r);
+          const review = t.reviews.find((x) => x.revisionNumber === r);
+          return (
+            `<h3>Intento ${r}</h3>` +
+            (photos.length ? `<div class="thumbs">${photos.map((e) => thumb(e, `${t.title}, intento ${r}`)).join("")}</div>` : `<p class="muted">Sin fotos.</p>`) +
+            (review
+              ? `<p>${review.decision === "APPROVE" ? "<strong>Aprobada</strong>" : "<strong>Ajuste solicitado</strong>"} por ${h(review.reviewerName)} · ${h(fmtDate(review.createdAt))}${
+                  review.comment ? `<br><span class="muted">Motivo: </span><span class="pre">${h(review.comment)}</span>` : ""
+                }</p>`
+              : `<p class="muted">Sin decisión todavía.</p>`)
+          );
+        })
+        .join("");
+      return (
+        `<h3>${h(t.position + 1)}. ${h(t.title)} · ${h(TASK_STATUS[t.status] ?? t.status)}</h3>` +
+        `<p class="muted">${t.description ? `${h(t.description)} · ` : ""}Enviada: ${h(fmtDate(t.submittedAt))} · Aprobada: ${h(fmtDate(t.approvedAt))}</p>${body}`
+      );
+    })
+    .join("");
+
   const proposalsHtml = !transcript || transcript.proposals.length === 0
     ? `<p class="muted">Sin versiones de propuesta registradas.</p>`
     : `<ol class="timeline">${transcript.proposals
@@ -208,14 +256,17 @@ ${dl([
   ["Criterios de aceptación", `<span class="pre">${h(str(t["acceptanceCriteria"]) ?? a.acceptanceCriteria)}</span>`],
   ["Fecha de entrega", h(str(t["dueDate"]) ?? a.dueDate ?? "Sin fecha")],
   ["Total", h(formatMxn(num(t["totalCents"]) ?? a.totalCents))],
-  ["Anticipo", h(formatMxn(num(t["advanceCents"]) ?? milestones.find((m) => m.kind === "ADVANCE")?.amountCents ?? 0))],
-  ["Saldo", h(formatMxn(num(t["balanceCents"]) ?? milestones.find((m) => m.kind === "BALANCE")?.amountCents ?? 0))],
+  ...(cleaning
+    ? ([["Forma de pago", "Un solo pago al terminar, cuando el cliente aprueba todas las tareas"]] as [string, string][])
+    : ([["Anticipo", h(formatMxn(num(t["advanceCents"]) ?? milestones.find((m) => m.kind === "ADVANCE")?.amountCents ?? 0))]] as [string, string][])),
+  [cleaning ? "Pago al terminar" : "Saldo", h(formatMxn(num(t["balanceCents"]) ?? milestones.find((m) => m.kind === "BALANCE")?.amountCents ?? 0))],
   ["Versión de los términos", h(a.termsVersion)],
   ["SHA-256 de los términos", `<span class="code">${h(a.termsSha256 ?? "")}</span>`],
   ["Aceptado por", a.buyerAcceptedName ? h(a.buyerAcceptedName) : "Aún sin aceptar"],
   ["Fecha de aceptación", h(fmtDate(a.buyerAcceptedAt))],
 ])}
 
+${cleaning ? `<h2>Tareas</h2>\n${tasksHtml || `<p class="muted">Sin tareas.</p>`}\n` : ""}
 <h2>Versiones de la propuesta</h2>
 ${proposalsHtml}
 
@@ -227,7 +278,7 @@ ${conversationHtml}
 ${milestones
   .map(
     (m) =>
-      `<tr><td>${h(MILESTONE_KIND[m.kind] ?? m.kind)}</td><td>${h(formatMxn(m.amountCents))}</td><td>${h(MILESTONE_STATUS[m.status] ?? m.status)}</td><td>${m.kind === "BALANCE" ? h(m.deliveryRound + 1) : "—"}</td><td>${h(fmtDate(m.approvedAt))}</td><td>${h(fmtDate(m.paidAt))}</td></tr>`,
+      `<tr><td>${h((cleaning ? CLEANING_KIND[m.kind] : undefined) ?? MILESTONE_KIND[m.kind] ?? m.kind)}</td><td>${h(formatMxn(m.amountCents))}</td><td>${h(MILESTONE_STATUS[m.status] ?? m.status)}</td><td>${m.kind === "BALANCE" ? h(m.deliveryRound + 1) : "—"}</td><td>${h(fmtDate(m.approvedAt))}</td><td>${h(fmtDate(m.paidAt))}</td></tr>`,
   )
   .join("")}
 </tbody></table>
@@ -239,15 +290,14 @@ ${
     : `<table><thead><tr><th>Hito</th><th>Fecha</th><th>Monto</th><th>Referencia</th><th>Método</th></tr></thead><tbody>${paid
         .map(
           (p) =>
-            `<tr><td>${h(MILESTONE_KIND[kinds.get(p.milestoneId) ?? ""] ?? "")}</td><td>${h(fmtDate(p.paidAt))}</td><td>${h(formatMxn(p.amountCents))}</td><td>${h(p.numRef)}</td><td>${h(METHOD[p.method] ?? p.method)}</td></tr>`,
+            `<tr><td>${h((cleaning ? CLEANING_KIND[kinds.get(p.milestoneId) ?? ""] : undefined) ?? MILESTONE_KIND[kinds.get(p.milestoneId) ?? ""] ?? "")}</td><td>${h(fmtDate(p.paidAt))}</td><td>${h(formatMxn(p.amountCents))}</td><td>${h(p.numRef)}</td><td>${h(METHOD[p.method] ?? p.method)}</td></tr>`,
         )
         .join("")}</tbody></table>`
 }
 
-<h2>Evidencias</h2>
-${evidenceHtml}
+${cleaning ? "" : `<h2>Evidencias</h2>\n${evidenceHtml}`}
 
-<h2>Revisiones del comprador</h2>
+${cleaning ? "" : `<h2>Revisiones del comprador</h2>
 ${
   reviews.length === 0
     ? `<p class="muted">Aún no hay revisiones.</p>`
@@ -257,14 +307,15 @@ ${
             `<tr><td>${h(r.deliveryRound + 1)}</td><td>${r.decision === "APPROVE" ? "Aprobada" : "Problema reportado"}</td><td class="pre">${h(r.comment ?? "—")}</td><td>${h(r.buyerName)}</td><td>${h(fmtDate(r.createdAt))}</td></tr>`,
         )
         .join("")}</tbody></table>`
-}
+}`}
 
 <h2>Historial completo</h2>
 <ol class="timeline">
 ${events
   .map((e) => {
     const detail = eventDetail(e.type, e.payload);
-    return `<li><strong>${h(EVENT_TITLE[e.type])}</strong> <span class="muted">— ${h(ACTOR[e.actorType] ?? e.actorType)}, ${h(fmtDate(e.occurredAt))}</span>${detail ? `<br><span class="muted">${h(detail)}</span>` : ""}</li>`;
+    const title = cleaning && e.type === "AGREEMENT_CREATED" ? "Así quedó el trabajo acordado" : cleaning && e.type === "TERMS_ACCEPTED" ? `${a.buyerName} aceptó el trabajo (esto no es un pago)` : EVENT_TITLE[e.type];
+    return `<li><strong>${h(title)}</strong> <span class="muted">— ${h(ACTOR[e.actorType] ?? e.actorType)}, ${h(fmtDate(e.occurredAt))}</span>${detail ? `<br><span class="muted">${h(detail)}</span>` : ""}</li>`;
   })
   .join("")}
 </ol>

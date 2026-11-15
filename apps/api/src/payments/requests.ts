@@ -173,7 +173,13 @@ export async function createPaymentRequest(
       concept: buildConcept(b.agreement.code, milestone.kind),
       numRef,
       bankAccountId,
-      metadata: buildPeyMetadata({ agreementId, milestoneId: milestone.id, paymentRequestId: prId }),
+      metadata: {
+        ...buildPeyMetadata({ agreementId, milestoneId: milestone.id, paymentRequestId: prId }),
+        // CLEANING: pins the request to the frozen checklist (prefix of the terms hash; no personal data).
+        ...(b.agreement.serviceType === "CLEANING" && b.agreement.termsSha256
+          ? { taskSetVersion: b.agreement.termsSha256.slice(0, 12) }
+          : {}),
+      },
     };
 
     type Outcome =

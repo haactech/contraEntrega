@@ -9,12 +9,13 @@ import { loadBundle } from "../repos/agreements";
 import { createAgreement, listAgreements, loadOwned, shareAgreement } from "../services/agreements";
 import { addEvidence, requestReview } from "../services/evidence";
 import { renderExport } from "../services/export";
+import { submitTask } from "../services/tasks";
 import { actionsFor, sellerOutput } from "./views";
 import { MCP_VIA, sellerActor, type McpContext, type McpHandlers } from "./context";
 
 type SellerHandlers = Pick<
   McpHandlers,
-  "list_agreements" | "get_agreement" | "create_agreement" | "share_agreement" | "add_evidence" | "request_review" | "export_agreement"
+  "list_agreements" | "get_agreement" | "create_agreement" | "share_agreement" | "add_evidence" | "request_review" | "submit_task" | "export_agreement"
 >;
 
 /** Seller tools always run with a verified api key (the registry rejects anonymous callers first). */
@@ -92,6 +93,12 @@ export const sellerHandlers: SellerHandlers = {
     const { sellerId, opts } = seller(ctx);
     const body = RequestReviewRequestSchema.parse(input.note ? { note: input.note } : {});
     await requestReview(ctx.db, ctx.env, sellerId, input.agreementId, body, ctx.now, opts);
+    return sellerOutput(ctx.env, ctx.db, sellerId, input.agreementId, ctx.now);
+  },
+
+  async submit_task(ctx, input) {
+    const { sellerId, opts } = seller(ctx);
+    await submitTask(ctx.db, ctx.env, sellerId, input.agreementId, input.taskId, input.note, ctx.now, opts);
     return sellerOutput(ctx.env, ctx.db, sellerId, input.agreementId, ctx.now);
   },
 

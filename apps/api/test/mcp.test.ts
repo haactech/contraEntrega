@@ -44,7 +44,7 @@ describe("MCP: protocolo", () => {
     const body = (await res.json()) as { result: { tools: { name: string; description: string; inputSchema: Record<string, unknown>; annotations: { readOnlyHint: boolean } }[] } };
     const tools = body.result.tools;
     expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
-    expect(tools).toHaveLength(12);
+    expect(tools).toHaveLength(14);
     for (const t of tools) {
       const def = MCP_TOOLS.find((x) => x.name === t.name)!;
       expect(t.description).toBe(def.description);
