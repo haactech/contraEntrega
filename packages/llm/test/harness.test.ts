@@ -37,6 +37,8 @@ const proposal = (over: Partial<NonNullable<AssistantTurn["proposal"]>> = {}) =>
   advanceMxn: 8000,
   dueDate: "2026-11-20",
   buyerName: "Mariana",
+  serviceType: "GENERIC" as const,
+  tasks: [],
   ...over,
 });
 const turn = (over: Partial<AssistantTurn>): AssistantTurn => ({

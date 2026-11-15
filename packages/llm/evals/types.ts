@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ALLOWED_ACTIONS, PROPOSAL_FIELDS, ASSISTANT_INTENTS } from "@trato/shared";
+import { ALLOWED_ACTIONS, PROPOSAL_FIELDS, ASSISTANT_INTENTS, SERVICE_TYPES } from "@trato/shared";
 
 /** Dataset format (one JSON object per line of `evals/datasets/<suite>.jsonl`). */
 
@@ -20,6 +20,13 @@ export const SCENARIOS = [
   "DISPUTED",
   "DISPUTED_FIXED",
   "COMPLETED",
+  /** CLEANING (checklist): preset `LIMPIEZA` with 4 tasks; task statuses depend on the scenario. */
+  "CLEANING_OPEN_PROPOSAL",
+  "CLEANING_SHARED",
+  /** baño APPROVED, cocina NEEDS_ADJUSTMENT («Faltó la estufa»), pisos IN_REVIEW, ventanas TODO. */
+  "CLEANING_IN_PROGRESS",
+  "CLEANING_ALL_APPROVED",
+  "CLEANING_COMPLETED",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -68,6 +75,12 @@ const ExpectBase = z.object({
   forbidden: z.array(z.string()).optional(),
   /** The reply must contain at least `min` of these words/phrases. */
   replyKeywords: Keywords.optional(),
+  /** Normalized proposal type (CLEANING proposals must carry advance 0 and tasks). */
+  serviceType: z.enum(SERVICE_TYPES).optional(),
+  /** Task titles (accent/case-insensitive containment) that must / must not be in the proposal. */
+  tasksInclude: z.array(z.string()).optional(),
+  tasksExclude: z.array(z.string()).optional(),
+  taskCount: z.number().int().optional(),
   /** Revision: every term not mentioned in this expect must equal the base terms. */
   keepRest: z.boolean().optional(),
   /** When the model may legitimately ask instead of proposing, skip proposal-only checks. */

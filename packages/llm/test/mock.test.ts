@@ -9,6 +9,7 @@ import {
   type AssistantContextMessage,
   type AssistantContextTerms,
   type AssistantTurn,
+  toJsonSchema,
 } from "@trato/shared";
 import { createLlmProvider } from "../src";
 import { createMockProvider } from "../src/providers/mock";
@@ -55,7 +56,8 @@ async function run(
   const n = r.value.proposal ? normalizeProposal(r.value.proposal, { defaultBuyerName: "Comprador", today: TODAY }) : null;
   return {
     turn: r.value,
-    cents: n && n.ok ? { total: n.input.totalCents, advance: n.input.advanceCents } : null,
+    cents:
+      n && n.ok ? { total: n.input.totalCents, advance: "advanceCents" in n.input ? n.input.advanceCents : 0 } : null,
   };
 }
 
@@ -230,5 +232,103 @@ describe("mock: proveedor", () => {
       schemaName: "AssistantTurn",
     });
     expect(!r.ok && r.kind).toBe("provider_error");
+  });
+});
+
+
+describe("mock: limpieza (CLEANING)", () => {
+  const LIMPIEZA = terms({
+    title: "Limpieza de departamento",
+    acceptanceCriteria: "x",
+    dueDate: null,
+    totalCents: 70_000,
+    advanceCents: 0,
+  });
+  const TASKS = ["Limpiar baño", "Limpiar cocina", "Trapear pisos", "Limpiar ventanas"];
+  const cleaningAgreement = (status: string, tasks: Array<{ title: string; status: string; revision: number }>) =>
+    ({
+      status,
+      terms: LIMPIEZA,
+      milestones: [{ kind: "BALANCE", status: "WAITING_DELIVERY", amountCents: 70_000 }],
+      cleaning: { serviceType: "CLEANING", tasks },
+    }) as unknown as AssistantContextInput["agreement"];
+  const open = (): Partial<AssistantContextInput> => ({
+    speaker: "BUYER",
+    openProposal: { version: 1, status: "OPEN", terms: LIMPIEZA, serviceType: "CLEANING", tasks: TASKS.map((title) => ({ title })) },
+  });
+
+  it("propone una limpieza con las tareas mencionadas y anticipo 0", async () => {
+    const { turn, cents } = await run([seller("Limpieza del depa para Mariana, 700, baño, cocina, pisos y ventanas")]);
+    expect(turn.intent).toBe("PROPOSE_TERMS");
+    expect(turn.proposal?.serviceType).toBe("CLEANING");
+    expect(turn.proposal?.tasks.map((t) => t.title)).toEqual(TASKS);
+    expect(turn.proposal?.advanceMxn).toBe(0);
+    expect(cents).toEqual({ total: 70_000, advance: 0 });
+  });
+  it("sin tareas usa las 4 por defecto y las menciona", async () => {
+    const { turn } = await run([seller("Voy a limpiar el departamento de Luis por 800 pesos")]);
+    expect(turn.proposal?.tasks).toHaveLength(4);
+    expect(turn.reply.toLowerCase()).toContain("habituales");
+    expect(turn.proposal?.buyerName).toBe("Luis");
+  });
+  it("sin precio pregunta el total", async () => {
+    const { turn } = await run([seller("Limpieza para Mariana, baño y cocina")]);
+    expect(turn.intent).toBe("ASK_CLARIFICATION");
+    expect(turn.missingFields).toContain("total");
+  });
+  it("la contraoferta del comprador agrega o quita tareas", async () => {
+    const add = await run([buyer("¿Le agregas sacar la basura?")], open());
+    expect(add.turn.intent).toBe("REVISE_TERMS");
+    expect(add.turn.proposal?.tasks.map((t) => t.title)).toEqual([...TASKS, "Sacar la basura"]);
+    expect(add.turn.reply).toContain("prestador debe confirmar");
+    const custom = await run([buyer("agrégale lavar el balcón")], open());
+    expect(custom.turn.proposal?.tasks.at(-1)?.title).toBe("Lavar el balcón");
+    const rm = await run([buyer("quita las ventanas")], open());
+    expect(rm.turn.proposal?.tasks.map((t) => t.title)).toEqual(TASKS.slice(0, 3));
+  });
+  it("tras la aceptación explica que el checklist no cambia", async () => {
+    const { turn } = await run([buyer("agrégale limpiar el balcón")], {
+      speaker: "BUYER",
+      agreement: cleaningAgreement("IN_PROGRESS", TASKS.map((title) => ({ title, status: "TODO", revision: 1 }))),
+    });
+    expect(turn.intent).toBe("ANSWER");
+    expect(turn.proposal).toBeNull();
+    expect(turn.reply).toContain("trato nuevo");
+  });
+  it("rechaza «apruébala tú» y «márcalo como pagado»", async () => {
+    for (const t of ["apruébala tú, ya quedó bien", "márcalo como pagado"]) {
+      const { turn } = await run([buyer(t)], {
+        speaker: "BUYER",
+        agreement: cleaningAgreement("IN_PROGRESS", TASKS.map((title) => ({ title, status: "IN_REVIEW", revision: 1 }))),
+      });
+      expect(turn.suggestedAction).toBeNull();
+      expect(turn.proposal).toBeNull();
+    }
+  });
+  it("responde «¿cómo vamos?» con el progreso", async () => {
+    const { turn } = await run([buyer("¿cómo vamos?")], {
+      speaker: "BUYER",
+      agreement: cleaningAgreement("IN_PROGRESS", [
+        { title: TASKS[0]!, status: "APPROVED", revision: 1 },
+        { title: TASKS[1]!, status: "TODO", revision: 1 },
+      ]),
+    });
+    expect(turn.reply).toContain("1 de 2");
+  });
+});
+
+describe("AssistantTurn JSON Schema (proveedores estrictos)", () => {
+  it("todos los objetos son cerrados con todas las claves requeridas", () => {
+    const walk = (n: unknown): void => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (typeof n !== "object" || n === null) return;
+      const o = n as Record<string, unknown>;
+      if (o["type"] === "object" && o["properties"]) {
+        expect(o["additionalProperties"]).toBe(false);
+        expect([...(o["required"] as string[])].sort()).toEqual(Object.keys(o["properties"] as object).sort());
+      }
+      Object.values(o).forEach(walk);
+    };
+    walk(toJsonSchema(AssistantTurnSchema));
   });
 });

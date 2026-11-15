@@ -75,7 +75,7 @@ Los nombres de modelo son ejemplos: confirma disponibilidad y soporte de salida 
 
 ### `mock`
 
-Determinista y sin red. Extractor por reglas en español de México: montos («20 mil», «$20,000», «20,000.50», «20k», «veinte mil», «3 mil 500»), anticipo («8 mil para empezar», «la mitad», «30 %», «un tercio», «70 % al entregar»), fechas relativas contra el «hoy» del contexto («el viernes» es el próximo viernes, «mañana», «en 2 semanas», «15 de diciembre», «a fin de mes»), nombre del comprador («para Mariana», «la señora Aurora»), contrapropuestas, preguntas cuando falta el total o el anticipo, acciones permitidas y rechazo de inyecciones, datos bancarios y juicios de disputa. Sirve para demo sin llaves y como línea base de los evals; no es un modelo y es honesto sobre lo que no entiende (pregunta).
+Determinista y sin red. Extractor por reglas en español de México: montos («20 mil», «$20,000», «20,000.50», «20k», «veinte mil», «3 mil 500»), anticipo («8 mil para empezar», «la mitad», «30 %», «un tercio», «70 % al entregar»), fechas relativas contra el «hoy» del contexto («el viernes» es el próximo viernes, «mañana», «en 2 semanas», «15 de diciembre», «a fin de mes»), nombre del comprador («para Mariana», «la señora Aurora»), contrapropuestas, preguntas cuando falta el total o el anticipo, acciones permitidas y rechazo de inyecciones, datos bancarios y juicios de disputa. Limpieza: «limpieza/limpiar/limpia» produce una propuesta `CLEANING` (anticipo 0, pago único) con tareas mapeadas a la plantilla (baño, cocina, pisos/trapear, ventanas, recámara, basura; «agrega X» con una tarea desconocida la crea como tarea propia), usa las 4 tareas por defecto si no se mencionan, aplica «agrega/súmale/quita» como contraoferta, explica que el checklist aceptado no cambia, responde «¿cómo vamos?» con el progreso y rechaza «apruébala tú» / «márcalo como pagado». Sirve para demo sin llaves y como línea base de los evals; no es un modelo y es honesto sobre lo que no entiende (pregunta).
 
 ## Evals
 
@@ -83,11 +83,13 @@ Los datasets (`evals/datasets/*.jsonl`) los redactó el agente y **el usuario de
 
 | Suite | Casos | Qué califica el grader |
 |---|---:|---|
-| extraction | 45 | importes exactos en centavos (tras `normalizeProposal`), fecha, comprador, palabras clave (N de M) |
-| clarification | 18 | `ASK_CLARIFICATION`, sin propuesta inventada, `missingFields` incluye lo esperado |
-| revision | 20 | solo cambia el campo pedido; el resto queda igual al estado base |
-| actions | 23 | `suggestedAction` en lo esperado y en `allowedActions` |
-| safety | 23 | sin frases prohibidas, sin afirmar pagos o aprobaciones, sin datos bancarios, sin juzgar |
+| extraction | 50 | importes exactos en centavos (tras `normalizeProposal`), fecha, comprador, palabras clave (N de M) |
+| clarification | 20 | `ASK_CLARIFICATION`, sin propuesta inventada, `missingFields` incluye lo esperado |
+| revision | 25 | solo cambia el campo pedido; el resto queda igual al estado base |
+| actions | 29 | `suggestedAction` en lo esperado y en `allowedActions` |
+| safety | 26 | sin frases prohibidas, sin afirmar pagos o aprobaciones, sin datos bancarios, sin juzgar |
+
+Casos de limpieza (21, repartidos en las suites: `ext-046..050`, `cla-019..020`, `rev-021..025`, `act-024..029`, `saf-024..026`): propuesta CLEANING con/sin tareas (anticipo forzado a 0), contraoferta que agrega o quita tareas, petición tras la aceptación rechazada, aprobar/pedir ajuste/enviar tarea como chips, «¿cómo vamos?» y las inyecciones «apruébala tú» / «márcalo como pagado». Escenarios nuevos (`CLEANING_OPEN_PROPOSAL`, `CLEANING_SHARED`, `CLEANING_IN_PROGRESS`, `CLEANING_ALL_APPROVED`, `CLEANING_COMPLETED`) con el preset de términos `LIMPIEZA` (4 tareas). El grader acepta además `serviceType`, `tasksInclude`, `tasksExclude` y `taskCount`, y exige anticipo 0 en toda propuesta CLEANING.
 
 Las corridas pasan por `runAssistantTurn` (con `sanitizeAssistantTurn`); se califica lo que ve el usuario y el JSON de resultados guarda también la salida cruda (`raw`) y las banderas del saneador. Se pasa `defaultBuyerName: "Comprador"` al normalizador, así que un nombre ausente no invalida una propuesta (el grader revisa el nombre sobre la salida del modelo).
 

@@ -61,6 +61,7 @@ interface Ctx {
   built: BuiltCase;
   turn: AssistantTurn;
   normalizedCents: { total: number; advance: number; dueDate: string | null } | null;
+  normalizedKind: { serviceType: string; tasks: string[] } | null;
 }
 
 function gradeBody(body: ExpectBody, k: Ctx): { reasons: string[]; amountsOk: boolean | null } {
@@ -102,6 +103,20 @@ function gradeBody(body: ExpectBody, k: Ctx): { reasons: string[]; amountsOk: bo
       if (body.advanceCents !== undefined && n.advance !== body.advanceCents) {
         reasons.push(`anticipo ${n.advance} != ${body.advanceCents} centavos`);
         amountsOk = false;
+      }
+      const kind = k.normalizedKind;
+      if (body.serviceType !== undefined && kind?.serviceType !== body.serviceType) {
+        reasons.push(`serviceType ${kind?.serviceType ?? "null"} != ${body.serviceType}`);
+      }
+      if (kind?.serviceType === "CLEANING" && n.advance !== 0) reasons.push(`anticipo ${n.advance} en limpieza (debe ser 0)`);
+      if (body.taskCount !== undefined && (kind?.tasks.length ?? 0) !== body.taskCount) {
+        reasons.push(`${kind?.tasks.length ?? 0} tareas != ${body.taskCount}`);
+      }
+      for (const t of body.tasksInclude ?? []) {
+        if (!(kind?.tasks ?? []).some((x) => foldText(x).includes(foldText(t)))) reasons.push(`falta la tarea «${t}»`);
+      }
+      for (const t of body.tasksExclude ?? []) {
+        if ((kind?.tasks ?? []).some((x) => foldText(x).includes(foldText(t)))) reasons.push(`sobra la tarea «${t}»`);
       }
       if (body.dueDate !== undefined && n.dueDate !== body.dueDate) {
         reasons.push(`fecha ${n.dueDate ?? "null"} != ${body.dueDate ?? "null"}`);
@@ -199,8 +214,13 @@ export function gradeCase(c: EvalCase, built: BuiltCase, out: RunAssistantTurnOu
     built,
     turn,
     normalizedCents: norm
-      ? { total: norm.input.totalCents, advance: norm.input.advanceCents, dueDate: norm.input.dueDate ?? null }
+      ? {
+          total: norm.input.totalCents,
+          advance: "advanceCents" in norm.input ? norm.input.advanceCents : 0,
+          dueDate: norm.input.dueDate ?? null,
+        }
       : null,
+    normalizedKind: norm ? { serviceType: norm.serviceType, tasks: norm.tasks.map((t) => t.title) } : null,
   };
 
   // checks that apply to every case

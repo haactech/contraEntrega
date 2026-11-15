@@ -1,6 +1,9 @@
 import { z } from "zod";
 import {
   ALLOWED_ACTION_LABELS,
+  CLEANING_TEMPLATE,
+  TASK_LIMITS,
+  buildCleaningAcceptanceCriteria,
   NEUTRAL_ASSISTANT_REPLY,
   formatMxn,
   type AssistantTurn,
@@ -11,6 +14,7 @@ import {
   type ProposalField,
 } from "@trato/shared";
 import type { LlmFactoryConfig } from "../../core";
+import { applyTaskOps, CLEANING_RE, defaultTasks, mentionedTasks, parseTaskOps, type MockTask } from "./cleaning";
 import { dateEs } from "./dates";
 import { EMPTY_DRAFT, extractFromText, type Draft, type ExtractNotes } from "./extract";
 import {
@@ -49,9 +53,20 @@ const StateSchema = z.object({
       estado: z.string(),
       terminos: TermsSchema,
       hitos: z.array(z.object({ tipo: z.string(), estado: z.string(), montoMxn: z.number() })),
+      tipoServicio: z.string().optional(),
+      progreso: z.object({ aprobadas: z.number(), total: z.number() }).optional(),
+      tareas: z.array(z.object({ titulo: z.string(), estado: z.string(), revision: z.number().optional(), ultimoAjuste: z.string().optional() })).optional(),
     })
     .nullable(),
-  propuestaAbierta: z.object({ version: z.number(), estado: z.string(), terminos: TermsSchema }).nullable(),
+  propuestaAbierta: z
+    .object({
+      version: z.number(),
+      estado: z.string(),
+      terminos: TermsSchema,
+      tipoServicio: z.string().optional(),
+      tareas: z.array(z.string()).optional(),
+    })
+    .nullable(),
   accionesPermitidas: z.object({ prestador: z.array(z.string()), comprador: z.array(z.string()) }),
 });
 type MockState = z.infer<typeof StateSchema>;
@@ -151,6 +166,8 @@ function proposalOf(d: Draft): NonNullable<AssistantTurn["proposal"]> {
     advanceMxn: (d.advanceCents ?? 0) / 100,
     dueDate: d.dueDate,
     buyerName: d.buyerName,
+    serviceType: "GENERIC",
+    tasks: [],
   };
 }
 
@@ -185,8 +202,34 @@ const STATUS_ES: Record<string, string> = {
   DISPUTED: "en disputa",
 };
 
+const TASK_STATUS_ES: Record<string, string> = {
+  TODO: "por hacer",
+  IN_REVIEW: "esperando aprobación",
+  NEEDS_ADJUSTMENT: "necesita ajuste",
+  APPROVED: "aprobada",
+};
+
+function describeCleaning(state: MockState): string {
+  const a = state.acuerdo!;
+  const tareas = a.tareas ?? [];
+  const approved = a.progreso?.aprobadas ?? tareas.filter((t) => t.estado === "APPROVED").length;
+  const total = a.progreso?.total ?? tareas.length;
+  const list = tareas
+    .map((t) => `${t.titulo} (${TASK_STATUS_ES[t.estado] ?? t.estado.toLowerCase()}${t.ultimoAjuste && t.estado === "NEEDS_ADJUSTMENT" ? `: «${t.ultimoAjuste}»` : ""})`)
+    .join("; ");
+  const pay = a.hitos.find((h) => h.tipo === "BALANCE");
+  const payLine =
+    pay?.estado === "PAID"
+      ? "El pago ya figura como pagado en la tarjeta."
+      : pay?.estado === "READY_TO_CHARGE" || pay?.estado === "AWAITING_PAYMENT"
+        ? "Con todas las tareas aprobadas ya se puede pagar desde la tarjeta de pago."
+        : "El pago único se habilita cuando todas las tareas estén aprobadas.";
+  return `Según el estado oficial van ${approved} de ${total} tareas aprobadas${list ? `: ${list}` : ""}. ${payLine}`;
+}
+
 function describeState(state: MockState): string {
   if (!state.acuerdo) return "Todavía no hay un acuerdo; estamos armando la propuesta.";
+  if (state.acuerdo.tipoServicio === "CLEANING") return describeCleaning(state);
   const parts = state.acuerdo.hitos.map((h) => {
     const label = h.tipo === "ADVANCE" ? "el anticipo" : "el saldo";
     return `${label} (${money(toCents(h.montoMxn))}) está ${STATUS_ES[h.estado] ?? h.estado.toLowerCase()}`;
@@ -217,6 +260,84 @@ function safetyReply(s: SafetyFlags): string {
     );
   }
   return parts.join(" ");
+}
+
+/* ----------------------------------------------------------------- cleaning */
+
+const listEs = (items: string[]): string =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+
+function cleaningProposal(d: Draft, tasks: MockTask[]): NonNullable<AssistantTurn["proposal"]> {
+  return {
+    title: d.title ?? CLEANING_TEMPLATE.title,
+    description: d.description ?? "",
+    acceptanceCriteria: buildCleaningAcceptanceCriteria(tasks),
+    totalMxn: (d.totalCents ?? 0) / 100,
+    advanceMxn: 0,
+    dueDate: d.dueDate,
+    buyerName: d.buyerName,
+    serviceType: "CLEANING",
+    tasks: tasks.map((t) => ({ title: t.title, description: t.description })),
+  };
+}
+
+function cleaningTurn(a: {
+  speaker: "SELLER" | "BUYER";
+  draft: Draft;
+  notes: ExtractNotes;
+  baseTerms: Terms | null;
+  tasks: MockTask[];
+  addedTasks: string[];
+  removedTasks: string[];
+  usedDefaults: boolean;
+  patched: boolean;
+  folded: string;
+  before: Draft;
+}): AssistantTurn {
+  const { draft, tasks, baseTerms } = a;
+  const advanceNote = /anticipo|adelanto|enganche/.test(a.folded)
+    ? " En limpieza el pago es único al terminar, sin anticipo."
+    : "";
+  if (a.notes.ambiguousTotal) return ask(["total"], `Veo dos montos distintos para el total. ¿Cuánto cobras por la limpieza?${advanceNote}`);
+  if (draft.totalCents === null) return ask(["total"], `¿Cuánto cobras en total por la limpieza?${advanceNote}`);
+  if (tasks.length > TASK_LIMITS.maxTasks) {
+    return ask(["tasks"], `Son demasiadas tareas: el checklist admite máximo ${TASK_LIMITS.maxTasks}. ¿Cuáles dejamos?`);
+  }
+  if (tasks.length === 0) return ask(["tasks"], "El checklist se quedó sin tareas. ¿Qué tareas incluye la limpieza?");
+
+  if (baseTerms) {
+    if (!a.patched) {
+      if (THANKS_OR_ACK.test(a.folded)) return turn({ intent: "NONE", reply: "De acuerdo." });
+      return turn({
+        intent: "ANSWER",
+        reply: "Entendido. Si quieren cambiar algo de la propuesta, díganme qué (por ejemplo agregar o quitar una tarea, el total o la fecha).",
+      });
+    }
+    const parts: string[] = [];
+    if (a.addedTasks.length > 0) parts.push(`agregué ${listEs(a.addedTasks.map((t) => `«${t}»`))}`);
+    if (a.removedTasks.length > 0) parts.push(`quité ${listEs(a.removedTasks.map((t) => `«${t}»`))}`);
+    const other = changeSummary(a.before, draft);
+    if (other) parts.push(other);
+    return turn({
+      intent: "REVISE_TERMS",
+      reply:
+        `Actualicé la propuesta: ${parts.join("; ")}. Ahora son ${tasks.length} tareas por ${money(draft.totalCents)}, pago único al terminar. ` +
+        (a.speaker === "BUYER" ? "El prestador debe confirmar el cambio." : "Revísala y confírmala si está bien.") +
+        advanceNote,
+      proposal: cleaningProposal(draft, tasks),
+    });
+  }
+  const names = listEs(tasks.map((t) => t.title.toLowerCase()));
+  return turn({
+    intent: "PROPOSE_TERMS",
+    reply:
+      `Listo, armé la propuesta de limpieza${draft.buyerName ? ` para ${draft.buyerName}` : ""}: ${money(draft.totalCents)} con pago único al terminar` +
+      (draft.dueDate ? `, entrega el ${dateEs(draft.dueDate)}` : "") +
+      `. ${a.usedDefaults ? "No mencionaste tareas, así que puse las habituales" : "Tareas"}: ${names}. ` +
+      `${a.usedDefaults ? "Ajústalas si quieres y " : ""}Revísala y, si está bien, confírmala.` +
+      advanceNote,
+    proposal: cleaningProposal(draft, tasks),
+  });
 }
 
 /* --------------------------------------------------------------------- core */
@@ -274,6 +395,51 @@ export function mockAssistantTurn(state: MockState, lines: Line[]): AssistantTur
     if (batchSet.has(line) && JSON.stringify(before2) !== JSON.stringify(draft)) patched = true;
   }
 
+  // ---- cleaning (task checklist) agreements
+  const baseIsCleaning = state.propuestaAbierta
+    ? state.propuestaAbierta.tipoServicio === "CLEANING"
+    : state.acuerdo?.tipoServicio === "CLEANING";
+  const sellerText = fold(lines.filter((l) => l.author === "Prestador").map((l) => l.text).join("\n"));
+  const isCleaning = baseTerms !== null ? baseIsCleaning : speaker === "SELLER" && CLEANING_RE.test(sellerText);
+  let tasks: MockTask[] = [];
+  let addedTasks: string[] = [];
+  let removedTasks: string[] = [];
+  let usedDefaults = false;
+  let ops = { add: [] as MockTask[], remove: [] as string[] };
+  if (isCleaning) {
+    draft = { ...draft, advanceCents: 0 };
+    ops = parseTaskOps(text);
+    const baseTasks: MockTask[] = baseTerms
+      ? (state.propuestaAbierta?.tareas ?? (state.acuerdo?.tareas ?? []).map((t) => t.titulo)).map((t) => ({
+          title: t,
+          description: CLEANING_TEMPLATE.tasks.find((x) => x.title === t)?.description ?? null,
+        }))
+      : [];
+    if (baseTerms) {
+      const r = applyTaskOps(baseTasks, ops);
+      tasks = r.tasks;
+      addedTasks = r.added;
+      removedTasks = r.removed;
+    } else {
+      tasks = mentionedTasks(sellerText);
+      if (tasks.length === 0) {
+        tasks = defaultTasks();
+        usedDefaults = true;
+      }
+    }
+    if (!baseTerms) draft = { ...draft, title: CLEANING_TEMPLATE.title };
+    if (!baseTerms && draft.buyerName === null) {
+      const original = lines.filter((l) => l.author === "Prestador").map((l) => l.text).join("\n");
+      const m = /\b(?:depa(?:rtamento)?|casa|oficina|local|cuarto)\s+(?:de|del)\s+(?:(?:la|el|don|do[ñn]a|se[ñn]ora|se[ñn]or)\s+)?([A-ZÁÉÍÓÚÑ][\wáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+)?)/.exec(original);
+      if (m?.[1]) draft = { ...draft, buyerName: m[1] };
+    }
+    if (baseTerms) {
+      const sameExceptAdvance = JSON.stringify({ ...before, advanceCents: 0 }) === JSON.stringify(draft);
+      patched = !sameExceptAdvance;
+    }
+    patched ||= addedTasks.length > 0 || removedTasks.length > 0;
+  }
+
   const hasTermChanges = patched || (baseTerms === null && found && (draft.totalCents !== null || draft.title !== null));
 
   // ---- safety-only messages
@@ -285,6 +451,14 @@ export function mockAssistantTurn(state: MockState, lines: Line[]): AssistantTur
         ? `${safetyReply(safety)} Si hiciste el pago, toca «${ALLOWED_ACTION_LABELS.REFRESH_PAYMENT}» para que se verifique.`
         : safetyReply(safety),
       suggestedAction: refresh ? "REFRESH_PAYMENT" : null,
+    });
+  }
+
+  if (isCleaning && !negotiating && baseTerms && (ops.add.length > 0 || ops.remove.length > 0)) {
+    return turn({
+      intent: "ANSWER",
+      reply:
+        "El checklist ya fue aceptado y no se puede cambiar. Si quieren agregar o quitar tareas, hace falta un trato nuevo; este sigue con las tareas acordadas.",
     });
   }
 
@@ -310,6 +484,8 @@ export function mockAssistantTurn(state: MockState, lines: Line[]): AssistantTur
     }
     if (STATUS_QUESTION.test(folded)) return turn({ intent: "ANSWER", reply: describeState(state) });
   }
+
+  if (isCleaning) return cleaningTurn({ speaker, draft, notes, baseTerms, tasks, addedTasks, removedTasks, usedDefaults, patched, folded, before });
 
   // ---- after acceptance terms are frozen
   if (!negotiating) {

@@ -12,7 +12,7 @@ export interface SafetyFlags {
 const INJECTION =
   /\b(?:ignora|olvida|desobedece|omite|ignore|forget)\b[^.!?\n]{0,40}\b(?:reglas|instrucciones|indicaciones|prompt|rules|instructions)\b|\bactua como\b|\beres ahora\b|\bnuevas instrucciones\b|\bprompt del sistema\b|\bsystem prompt\b|\bmodo (?:desarrollador|dios)\b|\bdeveloper mode\b|\bjailbreak\b/;
 const PAY_CLAIM =
-  /\bconfirma(?:me|le)?\s+(?:que\s+)?(?:ya\s+)?(?:se\s+)?pag|\bdi(?:le)?\s+(?:a\w+\s+)?que\s+ya\s+(?:se\s+)?pag|\bmarca(?:lo|la)?\s+(?:como\s+)?(?:pagad|aprobad|completad|liberad|recibid)|\blibera(?:r)?\s+(?:ya\s+)?(?:el\s+)?(?:dinero|pago)|\b(?:da|dalo|dala)\s+por\s+(?:pagad|aprobad|entregad)|\bregistra\s+(?:el|mi)\s+pago|\bcambia\s+(?:el\s+)?estado|\bapruebalo\b|\baprueba\s+(?:tu\s+)?(?:la\s+)?entrega\b/;
+  /\bconfirma(?:me|le)?\s+(?:que\s+)?(?:ya\s+)?(?:se\s+)?pag|\bdi(?:le)?\s+(?:a\w+\s+)?que\s+ya\s+(?:se\s+)?pag|\bmarca(?:lo|la)?\s+(?:como\s+)?(?:pagad|aprobad|completad|liberad|recibid)|\blibera(?:r)?\s+(?:ya\s+)?(?:el\s+)?(?:dinero|pago)|\b(?:da|dalo|dala)\s+por\s+(?:pagad|aprobad|entregad)|\bregistra\s+(?:el|mi)\s+pago|\bcambia\s+(?:el\s+)?estado|\bapruebal[oa]\b|\baprueba\s+(?:tu\s+)?(?:la\s+)?entrega\b|\baprueba\s+(?:tu\s+)?(?:la|las|esa|esta|todas)\b[^.!?\n]{0,25}\btareas?\b|\bapruebala\s+tu\b|\bmarca\s+(?:todas?\s+)?(?:las\s+)?(?:tareas?\s+)?(?:como\s+)?(?:aprobad|pagad|hech|terminad)|\bmarca(?:lo|la|las)?\s+(?:como\s+)?(?:hech[oa]s?|terminad[oa]s?)\b/;
 const BANK =
   /\b(?:clabe|numero de cuenta|cuenta bancaria|cuenta de banco|datos bancarios|numero de tarjeta|tarjeta de credito|cvv|nip|contrasena|codigo de (?:verificacion|seguridad)|token del banco|banca en linea)\b/;
 const JUDGE =
@@ -35,6 +35,7 @@ interface ActionRule {
 }
 
 const SELLER_RULES: ActionRule[] = [
+  { action: "SUBMIT_TASK", re: /\b(?:enviar|mandar|pasar)\s+(?:la\s+)?tarea\b|\benviar para revision\b|\bya limpie\b|\bya termine\s+(?:de\s+limpiar|el\s+bano|la\s+cocina|los\s+pisos|las\s+ventanas|la\s+tarea|esa\s+tarea)|\btermine de limpiar\b/ },
   { action: "REDELIVER", re: /\b(?:vuelvo a entregar|entregar de nuevo|re ?entrega|ya (?:lo )?corregi|ya (?:quedo )?corregid)\b/ },
   { action: "REQUEST_REVIEW", re: /\b(?:ya termine|ya quedo|ya lo termine|ya acabe|ya esta listo|trabajo terminado|terminado el trabajo|solicitar revision|mandalo a revision|pide la revision)\b/ },
   { action: "UPLOAD_EVIDENCE", re: /\b(?:subir|mandar|enviar|adjuntar|pasar|cargar)\s+(?:las\s+|unas\s+)?(?:mas\s+)?(?:fotos?|evidencias?|imagenes)|\bte mando (?:las )?fotos\b|\bquiero subir\b/ },
@@ -44,6 +45,8 @@ const SELLER_RULES: ActionRule[] = [
 ];
 
 const BUYER_RULES: ActionRule[] = [
+  { action: "REQUEST_ADJUSTMENT", re: /\b(?:pedir|pido|quiero|solicito)\s+(?:un\s+)?ajuste\b|\bquedo\s+sucio\b|\besta\s+sucio\b|\ble\s+falta\b|\bfalto\s+limpiar\b|\bno\s+limpio\b/ },
+  { action: "APPROVE_TASK", re: /\b(?:apruebo|quiero aprobar|aprobar)\s+(?:la\s+|esa\s+|esta\s+)?tarea\b|\btarea\s+(?:esta\s+)?(?:lista|perfecta|bien)\b|\bquedo\s+(?:muy\s+)?(?:bien|limpio|limpia)\s+(?:el|la|los|las)\b/ },
   { action: "REFRESH_PAYMENT", re: /\b(?:ya pague|ya hice el pago|ya transferi|ya deposite|pago realizado|ya lo pague|ya escanee)\b/ },
   { action: "DISPUTE_DELIVERY", re: /\b(?:no me gusto|no coincid\w*|medidas no|esta mal|no quedo|reportar|reportarle|defecto|no es lo que|danado|rayado|chueco|mal hecho)\b/ },
   { action: "APPROVE_DELIVERY", re: /\b(?:todo bien|recibido|me gusto|quedo muy bien|apruebo|conforme|esta perfecto|quedo perfecto)\b/ },
@@ -75,7 +78,7 @@ export function detectAction(
 }
 
 export const STATUS_QUESTION =
-  /\b(?:ya (?:pagaron|llego|se pago|esta pagado|me pagaron)|como va|en que (?:estado|va)|cuanto falta|que sigue|cual es el estado|ya llego el pago|se recibio)\b/;
+  /\b(?:ya (?:pagaron|llego|se pago|esta pagado|me pagaron)|como va(?:mos)?|en que (?:estado|va)|cuanto falta|que sigue|cual es el estado|ya llego el pago|se recibio)\b/;
 
 export const GREETING_ONLY = /^\s*(?:hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|oye)\W*$/;
 
