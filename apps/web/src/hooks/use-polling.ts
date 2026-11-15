@@ -15,12 +15,12 @@ export interface PolledResource<T> {
 /**
  * Minimal polling hook. `load(previous, signal)` returns the new data, or `null`
  * when nothing changed (e.g. HTTP 304). `awaitingPayment(data)` picks the fast
- * interval. Polling pauses while the tab is hidden and resumes (with an
+ * interval, or `"stop"` to stop polling (e.g. the deal is completed). Polling pauses while the tab is hidden and resumes (with an
  * immediate refresh) when it becomes visible again.
  */
 export function usePolling<T>(
   load: (previous: T | null, signal: AbortSignal) => Promise<T | null>,
-  awaitingPayment: (data: T | null) => boolean | { awaitingPayment: boolean; busy: boolean },
+  awaitingPayment: (data: T | null) => boolean | "stop" | { awaitingPayment: boolean; busy: boolean },
   deps: ReadonlyArray<unknown>,
 ): PolledResource<T> {
   const [data, setDataState] = useState<T | null>(null);
@@ -47,6 +47,7 @@ export function usePolling<T>(
   const schedule = useCallback(() => {
     window.clearTimeout(timer.current);
     const hint = awaitingRef.current(dataRef.current);
+    if (hint === "stop") return;
     const flags = typeof hint === "boolean" ? { awaitingPayment: hint, busy: false } : hint;
     const ms = pollInterval({ ...flags, hidden: document.visibilityState === "hidden" });
     if (ms === null || !alive.current) return;

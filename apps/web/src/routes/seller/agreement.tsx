@@ -27,6 +27,7 @@ import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
 import { ErrorBox, NoCustodyNotice, Page } from "@/components/layout";
 import { Timeline } from "@/components/timeline";
+import { TaskChecklistContainer } from "@/components/tasks/checklist-container";
 import { EvidencePanel } from "./evidence-panel";
 import { ShareSheet, type ShareLinks } from "./share-sheet";
 import type { AgreementLocationState } from "./new-agreement";
@@ -40,7 +41,8 @@ export default function AgreementRoute() {
 
   const { data, error, loading, refresh, setData } = usePolling<SellerAgreementView>(
     (_prev, signal) => api.getAgreement(id, signal),
-    () => false,
+    // Cleaning: poll every few seconds (the client reviews task by task) until the deal is completed.
+    (d) => (d?.serviceType === "CLEANING" ? (d.agreement.status === "COMPLETED" ? "stop" : true) : false),
     [id],
   );
 
@@ -90,6 +92,7 @@ export default function AgreementRoute() {
   const canDeliver = data.nextAction === "UPLOAD_EVIDENCE" || data.nextAction === "RESOLVE_DISPUTE";
   const dispute = [...data.reviews].reverse().find((r) => r.decision === "DISPUTE");
   const chip = chipFor({ nextAction: data.nextAction });
+  const cleaning = data.serviceType === "CLEANING" && data.tasks !== null;
 
   async function share(regenerate: boolean) {
     setBusy(true);
@@ -145,9 +148,11 @@ export default function AgreementRoute() {
         </Link>
       )}
 
+      {!cleaning && (
       <Card>
         <Stepper steps={[...PROGRESS_STEPS]} current={progress.current} done={progress.done} />
       </Card>
+      )}
 
       {!!error && !isApiError(error, "UNAUTHORIZED") && (
         <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">
@@ -155,6 +160,18 @@ export default function AgreementRoute() {
         </p>
       )}
 
+      {cleaning && (
+        <TaskChecklistContainer
+          role="SELLER"
+          view={data}
+          refresh={refresh}
+          showTimeline
+          onShare={() => void (currentLinks ? setShareOpen(true) : share(false))}
+        />
+      )}
+      {actionError && cleaning && <ErrorBox message={actionError} />}
+
+      {!cleaning && (
       <Card className="space-y-3 border-brand-600 bg-brand-50">
         <div className="flex items-center gap-2">
           <Badge tone={chip.tone}>{chip.label}</Badge>
@@ -169,8 +186,9 @@ export default function AgreementRoute() {
         )}
         {actionError && <ErrorBox message={actionError} />}
       </Card>
+      )}
 
-      {data.nextAction === "RESOLVE_DISPUTE" && dispute && (
+      {!cleaning && data.nextAction === "RESOLVE_DISPUTE" && dispute && (
         <Card className="space-y-2 border-red-300 bg-red-50">
           <p className="flex items-center gap-2 font-bold text-red-800">
             <TriangleAlert className="size-5" aria-hidden /> Motivo que reportó {dispute.buyerName}
@@ -181,7 +199,7 @@ export default function AgreementRoute() {
         </Card>
       )}
 
-      {canDeliver && (
+      {!cleaning && canDeliver && (
         <EvidencePanel
           view={data}
           redelivery={data.nextAction === "RESOLVE_DISPUTE"}
@@ -217,14 +235,14 @@ export default function AgreementRoute() {
       )}
 
       <Card className="space-y-3">
-        <CardTitle>Cobros</CardTitle>
+        <CardTitle>{cleaning ? "Pago" : "Cobros"}</CardTitle>
         <ul className="divide-y divide-slate-200">
           {data.milestones.map((m) => {
             const st = MILESTONE_STATUS_LABEL[m.status];
             return (
               <li key={m.id} className="flex items-center justify-between gap-2 py-3">
                 <span>
-                  <span className="block font-semibold">{MILESTONE_TITLE[m.kind]}</span>
+                  <span className="block font-semibold">{cleaning ? "Pago al terminar" : MILESTONE_TITLE[m.kind]}</span>
                   <Badge tone={st.tone}>{st.label}</Badge>
                 </span>
                 <span className="text-lg font-bold">{formatMxn(m.amountCents)}</span>
@@ -237,7 +255,7 @@ export default function AgreementRoute() {
         </p>
       </Card>
 
-      {balance && data.evidence.some((e) => e.submitted) && (
+      {!cleaning && balance && data.evidence.some((e) => e.submitted) && (
         <Card className="space-y-2">
           <CardTitle>Fotos enviadas</CardTitle>
           <ul className="grid grid-cols-3 gap-2">
@@ -253,8 +271,8 @@ export default function AgreementRoute() {
       )}
 
       <Card className="space-y-3">
-        <CardTitle>Historial</CardTitle>
-        <Timeline events={data.events} milestones={data.milestones} />
+        <CardTitle>{cleaning ? "Comprobante" : "Historial"}</CardTitle>
+        {!cleaning && <Timeline events={data.events} milestones={data.milestones} />}
         <a
           href={API_ROUTES.agreementExport(id)}
           target="_blank"
