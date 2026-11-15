@@ -14,7 +14,7 @@ import { authenticate, currentSeller, listDemoSellers } from "../services/sessio
 
 export const systemRoutes = new Hono<HonoEnv>();
 
-systemRoutes.get("/health", (c) => c.json({ ok: true, mode: c.env.PAYMENTS_MODE } satisfies HealthResponse));
+systemRoutes.get("/health", (c) => c.json({ ok: true, mode: c.env.PAYMENTS_MODE, assistant: { enabled: false, provider: null, model: null } } satisfies HealthResponse));
 
 systemRoutes.get("/demo/sellers", async (c) => {
   const sellers = await listDemoSellers(createDb(c.env.DB));

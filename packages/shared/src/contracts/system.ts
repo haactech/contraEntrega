@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { PaymentsModeSchema, WebhookProcessingStatusSchema } from "../enums";
+import { AssistantStatusSchema } from "./conversations";
 import { SellerSummarySchema } from "./views";
 
-export const HealthResponseSchema = z.object({ ok: z.literal(true), mode: PaymentsModeSchema });
+export const HealthResponseSchema = z.object({
+  ok: z.literal(true),
+  mode: PaymentsModeSchema,
+  /** Conversational assistant availability; never includes keys. */
+  assistant: AssistantStatusSchema,
+});
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 
 export const DemoSellersResponseSchema = z.object({ sellers: z.array(SellerSummarySchema) });

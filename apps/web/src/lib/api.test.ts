@@ -52,9 +52,9 @@ describe("apiClient", () => {
   });
 
   it("sends credentials: include and parses a valid response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(json({ ok: true, mode: "mock" }));
+    const fetchMock = vi.fn().mockResolvedValue(json({ ok: true, mode: "mock", assistant: { enabled: false, provider: null, model: null } }));
     const api = createApiClient(fetchMock);
-    await expect(api.health()).resolves.toEqual({ ok: true, mode: "mock" });
+    await expect(api.health()).resolves.toEqual({ ok: true, mode: "mock", assistant: { enabled: false, provider: null, model: null } });
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "include", method: "GET" });
   });
 

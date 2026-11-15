@@ -5,3 +5,6 @@ export * from "./system";
 export * from "./agreements";
 export * from "./public";
 export * from "./routes";
+export * from "./conversations";
+export * from "./api-keys";
+export * from "./mcp";

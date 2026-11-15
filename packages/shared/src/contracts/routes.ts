@@ -24,6 +24,18 @@ export const API_ROUTES = {
   publicReview: (token: string) => `/api/public/tratos/${e(token)}/review`,
   publicExport: (token: string) => `/api/public/tratos/${e(token)}/export`,
 
+  conversations: "/api/conversations",
+  conversation: (id: string) => `/api/conversations/${e(id)}`,
+  conversationMessages: (id: string) => `/api/conversations/${e(id)}/messages`,
+  conversationProposalConfirm: (id: string, proposalId: string) =>
+    `/api/conversations/${e(id)}/proposals/${e(proposalId)}/confirm`,
+  publicConversation: (token: string) => `/api/public/tratos/${e(token)}/conversation`,
+  publicMessages: (token: string) => `/api/public/tratos/${e(token)}/messages`,
+
+  apiKeys: "/api/api-keys",
+  apiKey: (id: string) => `/api/api-keys/${e(id)}`,
+  mcp: "/mcp",
+
   evidenceFile: (id: string) => `/api/files/evidence/${e(id)}`,
   webhookPey: "/api/webhooks/pey",
   devSimulatePayment: "/api/dev/simulate-payment",
@@ -32,7 +44,14 @@ export const API_ROUTES = {
 /** Frontend (SPA) routes. */
 export const APP_ROUTES = {
   home: "/",
+  /**
+   * v0.3: "Nuevo trato" opens the chat room flow (creates a conversation, then navigates to
+   * `room(id)`). The v0.2 form stays reachable at `newAgreementForm`.
+   */
   newAgreement: "/tratos/nuevo",
+  newAgreementForm: "/tratos/nuevo/formulario",
+  /** Seller's conversation room. The buyer keeps using `buyer(token)`, which hosts the same room. */
+  room: (conversationId: string) => `/salas/${e(conversationId)}`,
   agreement: (id: string) => `/tratos/${e(id)}`,
   buyer: (token: string) => `/t/${e(token)}`,
 } as const;
