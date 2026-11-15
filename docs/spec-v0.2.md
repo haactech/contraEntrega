@@ -28,6 +28,7 @@ Propuesta: «Acuerda el trabajo, cobra por etapas y conserva evidencia de todo»
 | 14 | **D1 no tiene transacciones interactivas**: atomicidad con `db.batch([...])`, `UPDATE ... WHERE status = ?` revisando `meta.changes`, y restricciones `UNIQUE`. | Precisión técnica sobre la v0.1 («insertar recibo en transacción»). |
 | 15 | **Rate limiting** con el binding *Workers Rate Limiting* en rutas públicas (lecturas 60/min, escrituras 10/min por token+IP). | Implementación nativa y barata. |
 | 16 | **PN (push CoDi) incluido** detrás de un campo opcional de teléfono. En resultado ambiguo de PN se exige esperar la expiración (360 s) antes de reintentar, porque el teléfono pudo haber recibido la solicitud. | Es barato con el mismo gateway; el riesgo de doble cobro se controla. |
+| 18 | **Alta de cuentas vía `POST /bank-account`** con script local idempotente que guarda el `bankAccountId` devuelto; webhook `bank.account.updated` actualiza `codi_status`. Ver §G. | El ID lo genera pey al registrar; la CLABE nunca toca el Worker ni el repo. |
 | 17 | **Código corto humano** por trato (`TR-0007`) usado en `concept` y UI. | El comprador reconoce el cobro en su app bancaria. |
 
 ---
@@ -182,8 +183,20 @@ Body: `{ amount: cents/100, concept: "Trato TR-0007 anticipo" (≤ 40 chars, sin
 ### Push — `POST /codi/pn` → 200 `{ transactionId, codiId }`
 Body: `{ amount, phoneNumber (10 dígitos), concept, expiration: 600, numRef, bankAccountId, metadata }`. Mostrar «Solicitud enviada a tu teléfono», nunca «Pago confirmado».
 
+### Alta de las 5 cuentas — `POST /bank-account` → 200 `{ id, codiStatus }`
+El `bankAccountId` **no lo entrega el organizador: lo devuelve pey al registrar la CLABE**.
+Body: `{ alias (1–255), name (titular, 1–255), clabe (18 dígitos, dígito verificador válido), entity: "BUSINESS"|"PERSON" }`. Errores 400: `INVALID_CLABE`, `INCOMPLETE_PARAMETERS`, `INVALID_PARAMETER`. Las cuentas nacen `PENDING` (normalmente hasta 5 días hábiles; las preautorizadas del hackatón deberían quedar `ACTIVE` rápido).
+
+Flujo (script local en Node, **las CLABEs nunca entran al Worker, a D1 ni al repo**):
+1. `infra/seed/accounts.local.json` (gitignored; plantilla versionada `accounts.example.json`): `[{ alias, name, clabe, entity, sellerDisplayName, trade }]` × 5.
+2. `pnpm --filter @trato/api register-accounts`: por cada entrada **sin** `peyBankAccountId`, llama `POST /bank-account` y escribe de inmediato `peyBankAccountId` y `codiStatus` de vuelta en el archivo local. Así, si se vuelve a ejecutar, no registra dos veces la misma cuenta. Si una cuenta ya tiene ID, solo consulta `GET /bank-account/{id}`.
+3. Genera `infra/seed/accounts.local.sql` (gitignored) con `demo_bank_accounts` (`pey_bank_account_id`, `clabe_last4`, `codi_status`) + `sellers`, y se aplica con `wrangler d1 execute`.
+4. `pnpm --filter @trato/api verify-accounts`: consulta `GET /bank-account/{id}` y reporta estado (solo últimos 4 dígitos en consola).
+5. Webhook `bank.account.updated` (`{ type, bankAccountId, codiStatus: "ACTIVE", clabe, name, entity, ownerType, ownerId, taxId? }`): el handler actualiza `demo_bank_accounts.codi_status` y `verified_at`; **descarta `clabe`/`name`/`taxId` del recibo guardado**.
+6. Solo cuentas `codi_status = ACTIVE` y `enabled = 1` pueden recibir solicitudes de pago (si no → 409 `INVALID_STATE` «La cuenta del prestador aún no está activa en CoDi»). En modo mock se siembran 5 cuentas ficticias `ACTIVE`.
+
 ### Consultas
-- `GET /bank-account/{id}` → `codiStatus` (`ACTIVE` requerido) — script `pnpm --filter @trato/api verify-accounts`.
+- `GET /bank-account/{id}` → `codiStatus` (`PENDING|PROCESSING|ACTIVE|ERROR`, `errorMessage` si ERROR).
 - `GET /transaction/codi/qr/{qrId}` → `{ items: [{ id, status: PENDING|PAID, amount, amountBreakdown{base,tip,fee}, datePaid, metadata }], nextToken }`.
 - `GET /transaction/{id}` → `{ id, status, amount, amountBreakdown, payableType, payableId, datePaid, metadata }`.
 
@@ -192,6 +205,7 @@ Body: `{ amount, phoneNumber (10 dígitos), concept, expiration: 600, numRef, ba
 
 ### Creación de solicitud (algoritmo)
 1. Validar estado con la función pura. Si existe solicitud activa vigente para el hito → devolverla (200).
+1b. Verificar que la cuenta del prestador está `ACTIVE`.
 2. Si existe `CREATION_UNKNOWN`: QR → conciliar (si nunca devolvimos `qrString`, el comprador no pudo pagarla: marcar `ABANDONED` y continuar). PN → si `now < created_at + 600 s` responder 409 `PAYMENT_PENDING_RECONCILIATION`; si no, `ABANDONED` y continuar.
 3. Insertar `CREATING` (el índice parcial impide carreras) + asignar `num_ref`.
 4. Llamar a pey. Éxito → batch: PR `AWAITING_PAYMENT` (+ `provider_qr_id`/`provider_transaction_id`, `qr_string`, `expires_at`), hito `AWAITING_PAYMENT`, evento, `version++`. 4xx → `FAILED` + evento, hito sin cambio, 502. Ambiguo → `CREATION_UNKNOWN`, 502 con mensaje «Estamos verificando…».
@@ -205,7 +219,7 @@ Payload plano (no hay envelope `data`):
 Pipeline:
 1. `raw = await c.req.text()`; verificar con `new Webhook(PEY_WEBHOOK_SECRET).verify(raw, headers)`; fallo → 401.
 2. `INSERT webhook_receipts ... ON CONFLICT(provider, webhook_id) DO NOTHING`; si no insertó: si el recibo existente está en `PENDING_RETRY` → reprocesar (pasos 3–7); en otro caso → 200 `{ duplicate: true }`.
-3. Parsear con Zod (`PeyWebhookEventSchema`); tipo desconocido → `IGNORED`, 200.
+3. Parsear con Zod (`PeyWebhookEventSchema`); `bank.account.updated` → actualizar cuenta, `PROCESSED`, 200 (sin pasos 4–6); tipo desconocido → `IGNORED`, 200.
 4. Correlacionar: `externalMetadata.paymentRequestId` → PR; si no hay, por `provider_qr_id = codiQrId` o `provider_transaction_id = transactionId`. Si no se encuentra → `PENDING_RETRY` (posible carrera) y responder **503** para que pey reintente; el handler de reconciliación también reprocesa `PENDING_RETRY` al consultar la PR.
 5. Validar `bankAccountId == pr.provider_bank_account_id`, importe (regla §A.2), `codiQrId == pr.provider_qr_id` (QR) o `transactionId == pr.provider_transaction_id` (PN, si se conoce). Fallo → `UNMATCHED` + evento `PAYMENT_UNMATCHED` (solo vendedor), 200, **nunca PAID**.
 6. Transición idempotente en un `batch`: `UPDATE payment_requests SET status='PAID', provider_transaction_id=?, paid_at=? WHERE id=? AND status IN ('AWAITING_PAYMENT','EXPIRED_LOCAL','CREATION_UNKNOWN')`; `UPDATE milestones SET status='PAID' ... WHERE id=? AND status <> 'PAID'`; evento `PAYMENT_CONFIRMED`; actualizar agreement (`IN_PROGRESS` o `COMPLETED` + `AGREEMENT_COMPLETED`), `version++`. Si el hito ya estaba `PAID` por otra PR → `DUPLICATE_PAYMENT_DETECTED`.
