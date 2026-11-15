@@ -10,7 +10,9 @@ import { agreements, milestones } from "../db/schema";
 import { GUARD_SQL } from "../payments/common";
 import type { AppEnv } from "../env";
 import { AppError, invalidState, notFound } from "../lib/errors";
-import { loadBundle } from "../repos/agreements";
+import { findAccessByHash, loadBundle } from "../repos/agreements";
+import { expireStalePaymentRequests } from "../payments/expire";
+import { sha256Hex } from "../lib/crypto";
 import { appendEventStatements, batchWithSeqRetry } from "../repos/events";
 import { evidenceWindow } from "../lib/url-window";
 import { buildBuyerView } from "./views";
@@ -104,5 +106,30 @@ export async function acceptAgreement(
   if (results[0]?.meta.changes !== 1) {
     throw invalidState("Este acuerdo ya fue aceptado.");
   }
+  return getBuyerView(db, env, agreementId, now);
+}
+
+/** Resolves the token of a buyer link to its agreement id; unknown or revoked -> 404 (same message). */
+export async function resolveBuyerToken(db: Db, token: string): Promise<{ agreementId: string; tokenHash: string }> {
+  const miss = () => notFound("Este enlace no existe o ya no está vigente.");
+  if (!token || token.length > 128) throw miss();
+  const tokenHash = await sha256Hex(token);
+  const access = await findAccessByHash(db, tokenHash);
+  if (!access || access.revokedAt !== null) throw miss();
+  return { agreementId: access.agreementId, tokenHash };
+}
+
+/** Invariant 3: true when `sellerId` owns the agreement (and so can never act as its buyer). */
+export async function isAgreementOwner(db: Db, sellerId: string, agreementId: string): Promise<boolean> {
+  const rows = await db.select({ sellerId: agreements.sellerId }).from(agreements).where(eq(agreements.id, agreementId)).limit(1);
+  return rows[0]?.sellerId === sellerId;
+}
+
+export const OWNER_CANNOT_BUY_MESSAGE =
+  "No puedes realizar esta acción en tu propio trato. Debe hacerla el comprador desde su enlace.";
+
+/** Buyer view after lazily expiring stale payment requests (no provider call). */
+export async function getFreshBuyerView(db: Db, env: AppEnv, agreementId: string, now: number): Promise<BuyerAgreementView> {
+  await expireStalePaymentRequests(env, agreementId, now);
   return getBuyerView(db, env, agreementId, now);
 }

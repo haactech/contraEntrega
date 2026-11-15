@@ -2,12 +2,9 @@ import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { HonoEnv } from "../env";
 import { SESSION_TTL_MS, createSessionValue, readSessionValue } from "../lib/crypto";
-import { forbidden, notFound, unauthorized } from "../lib/errors";
+import { forbidden, unauthorized } from "../lib/errors";
 import { createDb } from "../db/client";
-import { findAccessByHash } from "../repos/agreements";
-import { agreements } from "../db/schema";
-import { eq } from "drizzle-orm";
-import { sha256Hex } from "../lib/crypto";
+import { OWNER_CANNOT_BUY_MESSAGE, isAgreementOwner, resolveBuyerToken } from "../services/public";
 
 export const SESSION_COOKIE = "trato_session";
 
@@ -48,12 +45,7 @@ export const requireSeller: MiddlewareHandler<HonoEnv> = async (c, next) => {
 
 /** Public routes: resolves `:token` to its agreement (404 for unknown or revoked, same message). */
 export const resolveToken: MiddlewareHandler<HonoEnv> = async (c, next) => {
-  const token = c.req.param("token");
-  if (!token || token.length > 128) throw notFound("Este enlace no existe o ya no está vigente.");
-  const tokenHash = await sha256Hex(token);
-  const access = await findAccessByHash(createDb(c.env.DB), tokenHash);
-  if (!access || access.revokedAt !== null) throw notFound("Este enlace no existe o ya no está vigente.");
-  c.set("access", { agreementId: access.agreementId, tokenHash });
+  c.set("access", await resolveBuyerToken(createDb(c.env.DB), c.req.param("token") ?? ""));
   await next();
 };
 
@@ -63,16 +55,8 @@ export const resolveToken: MiddlewareHandler<HonoEnv> = async (c, next) => {
  */
 export const forbidOwnerSeller: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const sellerId = await sellerFromCookie(c);
-  if (sellerId) {
-    const rows = await createDb(c.env.DB)
-      .select({ sellerId: agreements.sellerId })
-      .from(agreements)
-      .where(eq(agreements.id, c.get("access").agreementId))
-      .limit(1);
-    if (rows[0]?.sellerId === sellerId) {
-      throw forbidden("No puedes realizar esta acción en tu propio trato. Debe hacerla el comprador desde su enlace.");
-    }
+  if (sellerId && (await isAgreementOwner(createDb(c.env.DB), sellerId, c.get("access").agreementId))) {
+    throw forbidden(OWNER_CANNOT_BUY_MESSAGE);
   }
   await next();
 };
-

@@ -1,4 +1,4 @@
-import type { PaymentRequestView } from "@trato/shared";
+import type { ActionVia, PaymentRequestView } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { AppEnv } from "../env";
 import { AppError, notFound } from "../lib/errors";
@@ -24,8 +24,9 @@ export function createForBuyer(
   milestoneId: string,
   input: Parameters<typeof createPaymentRequest>[4],
   idempotencyKey: string | null,
+  opts: { via?: ActionVia | undefined } = {},
 ): Promise<CreatePaymentRequestResult> {
-  return createPaymentRequest(env, getGateway(env), agreementId, milestoneId, input, idempotencyKey);
+  return createPaymentRequest(env, getGateway(env), agreementId, milestoneId, input, idempotencyKey, Date.now, opts);
 }
 
 /** Refresh: reconcile (throttled) and return the request's current view. */

@@ -53,7 +53,7 @@ export async function createAgreement(
   sellerId: string,
   input: CreateAgreementData,
   now: number,
-  opts: { conversationId?: string | undefined; via?: ActionVia | undefined } = {},
+  opts: { conversationId?: string | undefined; via?: ActionVia | undefined; actorRef?: string | undefined } = {},
 ): Promise<SellerAgreementView> {
   const seller = await findSeller(db, sellerId);
   if (!seller) throw notFound("No encontramos al prestador.");
@@ -125,7 +125,7 @@ export async function createAgreement(
         agreementId: id,
         type: "AGREEMENT_CREATED",
         actorType: "SELLER",
-        actorRef: sellerId,
+        actorRef: opts.actorRef ?? sellerId,
         payload: {
           code,
           totalCents: split.totalCents,
@@ -173,7 +173,7 @@ export async function shareAgreement(
   agreementId: string,
   regenerate: boolean,
   now: number,
-  opts: { via?: ActionVia | undefined } = {},
+  opts: { via?: ActionVia | undefined; actorRef?: string | undefined } = {},
 ): Promise<ShareAgreementResponse> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
@@ -254,7 +254,7 @@ export async function shareAgreement(
           agreementId,
           type: existing ? "LINK_REGENERATED" : "AGREEMENT_SHARED",
           actorType: "SELLER",
-          actorRef: sellerId,
+          actorRef: opts.actorRef ?? sellerId,
           payload: {
             ...(existing ? {} : { termsSha256: sealed?.termsSha256 ?? b.agreement.termsSha256 }),
             ...(opts.via ? { via: opts.via } : {}),
@@ -300,7 +300,7 @@ export async function reviseTerms(
   agreementId: string,
   input: CreateAgreementData,
   now: number,
-  opts: { via?: ActionVia | undefined } = {},
+  opts: { via?: ActionVia | undefined; actorRef?: string | undefined } = {},
 ): Promise<SellerAgreementView> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
@@ -378,7 +378,7 @@ export async function reviseTerms(
           agreementId,
           type: "TERMS_REVISED",
           actorType: "SELLER",
-          actorRef: sellerId,
+          actorRef: opts.actorRef ?? sellerId,
           payload: {
             termsVersion,
             termsSha256,

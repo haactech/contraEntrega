@@ -51,7 +51,7 @@ agreementRoutes.post("/:id/evidence", async (c) => {
   }
   const file = form.get(EVIDENCE_LIMITS.fieldName);
   if (!(file instanceof File)) throw new AppError("VALIDATION_ERROR", "Falta el archivo de la foto.");
-  const view = await addEvidence(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), file, Date.now());
+  const view = await addEvidence(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), file, Date.now(), { via: viaOf(c) });
   return c.json(view, 201);
 });
 
@@ -62,7 +62,7 @@ agreementRoutes.delete("/:id/evidence/:evidenceId", async (c) => {
 
 agreementRoutes.post("/:id/request-review", async (c) => {
   const body = await parseJson(c, RequestReviewRequestSchema, true);
-  return c.json(await requestReview(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), body, Date.now()));
+  return c.json(await requestReview(createDb(c.env.DB), c.env, sellerId(c), c.req.param("id"), body, Date.now(), { via: viaOf(c) }));
 });
 
 agreementRoutes.get("/:id/export", async (c) => {

@@ -1,4 +1,5 @@
 import {
+  type ActionVia,
   EVIDENCE_LIMITS,
   evidenceRoundFor,
   canAddEvidence,
@@ -20,6 +21,12 @@ import { loadOwned } from "./agreements";
 import { buildSellerView, evidenceView } from "./views";
 
 const MAX_ATTEMPTS = 3;
+
+/** Channel hint and actor override recorded in event payloads / `actor_ref` (e.g. `mcp:<apiKeyId>`). */
+export interface ActionOpts {
+  via?: ActionVia | undefined;
+  actorRef?: string | undefined;
+}
 
 const balanceOf = (b: AgreementBundle) => {
   const m = b.milestones.find((x) => x.kind === "BALANCE");
@@ -56,6 +63,7 @@ export async function addEvidence(
   agreementId: string,
   file: File,
   now: number,
+  opts: ActionOpts = {},
 ): Promise<EvidenceView> {
   if (file.size > EVIDENCE_LIMITS.maxBytes) {
     throw new AppError("VALIDATION_ERROR", "La foto pesa más de 5 MB. Comprímela e inténtalo de nuevo.");
@@ -122,8 +130,8 @@ export async function addEvidence(
             agreementId,
             type: "EVIDENCE_ADDED",
             actorType: "SELLER",
-            actorRef: sellerId,
-            payload: { milestoneKind: "BALANCE", deliveryRound: round, sha256, mimeType: kind.mime, sizeBytes: buf.byteLength },
+            actorRef: opts.actorRef ?? sellerId,
+            payload: { milestoneKind: "BALANCE", deliveryRound: round, sha256, mimeType: kind.mime, sizeBytes: buf.byteLength, ...(opts.via ? { via: opts.via } : {}) },
             now,
             guardWriteId: writeId,
           }),
@@ -189,6 +197,7 @@ export async function requestReview(
   agreementId: string,
   input: RequestReviewRequest,
   now: number,
+  opts: ActionOpts = {},
 ): Promise<SellerAgreementView> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
@@ -235,13 +244,14 @@ export async function requestReview(
           agreementId,
           type: "REVIEW_REQUESTED",
           actorType: "SELLER",
-          actorRef: sellerId,
+          actorRef: opts.actorRef ?? sellerId,
           payload: {
             milestoneKind: "BALANCE",
             deliveryRound: t.deliveryRound,
             evidenceCount: unsubmitted,
             note: input.note ?? null,
             redelivery: t.redelivery,
+            ...(opts.via ? { via: opts.via } : {}),
           },
           now,
           guardWriteId: writeId,

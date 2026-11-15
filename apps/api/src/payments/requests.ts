@@ -6,6 +6,7 @@ import {
   centsToMxn,
   formatNumRef,
   onPaymentRequestCreated,
+  type ActionVia,
   type CreatePaymentRequestInput,
   type PaymentRequestView,
 } from "@trato/shared";
@@ -51,6 +52,7 @@ export async function createPaymentRequest(
   input: CreatePaymentRequestInput,
   idempotencyKey: string | null,
   now: () => number = Date.now,
+  opts: { via?: ActionVia | undefined } = {},
 ): Promise<CreatePaymentRequestResult> {
   const db = createDb(env.DB);
   let waits = 0;
@@ -245,7 +247,7 @@ export async function createPaymentRequest(
             agreementId,
             type: "PAYMENT_REQUEST_CREATED",
             actorType: "BUYER",
-            payload: paymentEventPayload(reservation, milestone.kind),
+            payload: { ...paymentEventPayload(reservation, milestone.kind), ...(opts.via ? { via: opts.via } : {}) },
             now: now(),
             guardWriteId: writeId,
           }),
@@ -275,7 +277,7 @@ export async function createPaymentRequest(
             agreementId,
             type: "PAYMENT_REQUEST_FAILED",
             actorType: "SYSTEM",
-            payload: paymentEventPayload(reservation, milestone.kind),
+            payload: { ...paymentEventPayload(reservation, milestone.kind), ...(opts.via ? { via: opts.via } : {}) },
             now: now(),
             guardWriteId: writeId,
           }),

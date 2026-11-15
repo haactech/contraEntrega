@@ -69,6 +69,7 @@ publicRoutes.post(
       c.req.param("milestoneId") ?? "",
       input,
       key,
+      { via: viaOf(c) },
     );
     c.header("Cache-Control", "no-store");
     return c.json(view, created ? 201 : 200);
