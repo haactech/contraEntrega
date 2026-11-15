@@ -20,9 +20,13 @@ import {
   SessionResponseSchema,
   ShareAgreementResponseSchema,
   SimulatePaymentResponseSchema,
+  SubmitTaskResponseSchema,
+  RequestAdjustmentResponseSchema,
   UploadEvidenceResponseSchema,
   type AcceptAgreementRequest,
   type CreateAgreementInput,
+  type CreateCleaningAgreementInput,
+  type EvidenceKind,
   type CreateApiKeyInput,
   type ConversationView,
   type CreatePaymentRequestInput,
@@ -149,6 +153,8 @@ export function createApiClient(fetchImpl?: FetchLike) {
       call(API_ROUTES.agreements, { schema: ListAgreementsResponseSchema, signal }),
     createAgreement: (body: CreateAgreementInput) =>
       call(API_ROUTES.agreements, { method: "POST", body, schema: SellerAgreementViewSchema }),
+    createCleaningAgreement: (body: CreateCleaningAgreementInput) =>
+      call(API_ROUTES.agreements, { method: "POST", body, schema: SellerAgreementViewSchema }),
     getAgreement: (id: string, signal?: AbortSignal) =>
       call(API_ROUTES.agreement(id), { schema: SellerAgreementViewSchema, signal }),
     shareAgreement: (id: string, regenerate = false) =>
@@ -168,6 +174,24 @@ export function createApiClient(fetchImpl?: FetchLike) {
     },
     deleteEvidence: (id: string, evidenceId: string) =>
       callVoid(API_ROUTES.agreementEvidenceItem(id, evidenceId), { method: "DELETE" }),
+    uploadTaskEvidence: (id: string, taskId: string, file: Blob, filename: string, kind?: EvidenceKind) => {
+      const fd = new FormData();
+      fd.append(EVIDENCE_LIMITS.fieldName, file, filename);
+      if (kind) fd.append("kind", kind);
+      return call(API_ROUTES.agreementTaskEvidence(id, taskId), {
+        method: "POST",
+        formData: fd,
+        schema: UploadEvidenceResponseSchema,
+      });
+    },
+    deleteTaskEvidence: (id: string, taskId: string, evidenceId: string) =>
+      callVoid(API_ROUTES.agreementTaskEvidenceItem(id, taskId, evidenceId), { method: "DELETE" }),
+    submitTask: (id: string, taskId: string, note?: string) =>
+      call(API_ROUTES.agreementTaskSubmit(id, taskId), {
+        method: "POST",
+        body: note ? { note } : {},
+        schema: SubmitTaskResponseSchema,
+      }),
     requestReview: (id: string, note?: string) =>
       call(API_ROUTES.agreementRequestReview(id), {
         method: "POST",
@@ -206,6 +230,14 @@ export function createApiClient(fetchImpl?: FetchLike) {
       call(API_ROUTES.publicRefreshPaymentRequest(token, paymentRequestId), {
         method: "POST",
         schema: PaymentRequestResponseSchema,
+      }),
+    approveTask: (token: string, taskId: string) =>
+      call(API_ROUTES.publicTaskApprove(token, taskId), { method: "POST", body: {}, schema: SubmitTaskResponseSchema }),
+    requestTaskAdjustment: (token: string, taskId: string, reason: string) =>
+      call(API_ROUTES.publicTaskRequestAdjustment(token, taskId), {
+        method: "POST",
+        body: { reason },
+        schema: RequestAdjustmentResponseSchema,
       }),
     submitReview: (token: string, body: ReviewRequest) =>
       call(API_ROUTES.publicReview(token), { method: "POST", body, schema: ReviewResponseSchema }),

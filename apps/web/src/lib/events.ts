@@ -33,8 +33,14 @@ const KIND_LABEL: Record<MilestoneKind, string> = { ADVANCE: "del anticipo", BAL
  * "Acuerdo aceptado" is not "Anticipo recibido"; "Solicitud enviada" is not
  * "Pago confirmado"; "Trabajo recibido" is not "Saldo pagado".
  */
-export function eventText(event: Pick<EventView, "type" | "payload">, milestones: readonly MilestoneView[] = []): EventText {
+export function eventText(
+  event: Pick<EventView, "type" | "payload">,
+  milestones: readonly MilestoneView[] = [],
+  opts: { cleaning?: boolean } = {},
+): EventText {
   const p = event.payload;
+  const cleaning = opts.cleaning === true || p["serviceType"] === "CLEANING";
+  const taskTitle = str(p["taskTitle"]);
   const kind = kindFromPayload(p, milestones);
   const kindLabel = kind ? KIND_LABEL[kind] : null;
   const amount = amountDetail(p);
@@ -42,7 +48,7 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
 
   switch (type) {
     case "AGREEMENT_CREATED":
-      return { title: "Trato creado", tone: "neutral" };
+      return { title: cleaning ? "Así quedó el trabajo acordado" : "Trato creado", tone: "neutral" };
     case "AGREEMENT_SHARED":
       return { title: "Enlace compartido con el comprador", tone: "neutral" };
     case "LINK_REGENERATED":
@@ -56,6 +62,7 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
       };
     }
     case "PAYMENT_REQUEST_CREATED":
+      if (cleaning) return { title: "Solicitud de pago lista; falta autorizar el pago", tone: "neutral" };
       return {
         title: "Solicitud enviada",
         detail: [kindLabel ? `Cobro ${kindLabel}` : null, amount].filter(Boolean).join(" · ") || "Aún sin pago confirmado.",
@@ -66,6 +73,7 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
     case "PAYMENT_REQUEST_EXPIRED":
       return { title: "La solicitud de pago venció", detail: "Se puede generar una nueva.", tone: "warn" };
     case "PAYMENT_CONFIRMED":
+      if (cleaning) return { title: "PAGADO", detail: amount ?? undefined, tone: "success" };
       return {
         title: kind === "ADVANCE" ? "Anticipo recibido" : kind === "BALANCE" ? "Saldo pagado" : "Pago confirmado",
         detail: amount ?? undefined,
@@ -84,7 +92,7 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
         tone: "warn",
       };
     case "EVIDENCE_ADDED":
-      return { title: "Evidencia agregada", tone: "neutral" };
+      return { title: cleaning ? "Foto agregada" : "Evidencia agregada", detail: taskTitle ?? undefined, tone: "neutral" };
     case "EVIDENCE_REMOVED":
       return { title: "Evidencia eliminada antes de enviarla", tone: "neutral" };
     case "REVIEW_REQUESTED": {
@@ -103,6 +111,19 @@ export function eventText(event: Pick<EventView, "type" | "payload">, milestones
     }
     case "AGREEMENT_COMPLETED":
       return { title: "Trato completado", tone: "success" };
+    case "TASK_SUBMITTED":
+      return { title: `Listo para revisar: ${taskTitle ?? "una tarea"}`, tone: "neutral" };
+    case "TASK_ADJUSTMENT_REQUESTED": {
+      const comment = str(p["comment"]);
+      return {
+        title: `Hace falta un ajuste en ${taskTitle ?? "una tarea"}${comment ? `: “${comment}”` : ""}`,
+        tone: "warn",
+      };
+    }
+    case "TASK_APPROVED":
+      return { title: `Tarea aprobada: ${taskTitle ?? "una tarea"}`, tone: "success" };
+    case "ALL_TASKS_APPROVED":
+      return { title: "Trabajo aprobado. Ya puedes pagar", tone: "success" };
     case "TERMS_REVISED":
       return { title: "Términos actualizados", detail: "Se propuso una nueva versión antes de aceptar.", tone: "neutral" };
     default: {

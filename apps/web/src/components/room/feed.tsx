@@ -97,8 +97,16 @@ const TONE_STYLE: Record<EventTone, string> = {
   danger: "border-red-200 bg-red-50 text-red-900",
 };
 
-export function EventCard({ event, milestones }: { event: FeedEvent; milestones: readonly MilestoneView[] }) {
-  const t = eventText({ type: event.eventType, payload: event.payload }, milestones);
+export function EventCard({
+  event,
+  milestones,
+  cleaning = false,
+}: {
+  event: FeedEvent;
+  milestones: readonly MilestoneView[];
+  cleaning?: boolean;
+}) {
+  const t = eventText({ type: event.eventType, payload: event.payload }, milestones, { cleaning });
   const Icon = t.tone === "success" ? CheckCircle2 : t.tone === "danger" ? TriangleAlert : t.tone === "warn" ? AlertCircle : Info;
   return (
     <li className="flex justify-center">
@@ -212,7 +220,7 @@ export function Feed({
               </li>
             );
           case "event":
-            return <EventCard key={e.key} event={e.item} milestones={milestones} />;
+            return <EventCard key={e.key} event={e.item} milestones={milestones} cleaning={view.agreement?.serviceType === "CLEANING"} />;
           case "system":
             return (
               <li key={e.key} className="flex justify-center px-2">

@@ -16,6 +16,7 @@ const view = {
   },
   seller: { displayName: "Luis", trade: "Herrería" },
   payee: { alias: "Cuenta demo 1", last4: "1234" },
+  serviceType: "GENERIC", paymentStrategy: "ADVANCE_AND_BALANCE", tasks: null, taskProgress: null,
   milestones: [], paymentRequests: [], evidence: [], reviews: [], events: [],
   activePaymentRequest: null, nextAction: "ACCEPT",
 };

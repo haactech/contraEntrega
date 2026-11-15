@@ -15,17 +15,19 @@ export function Timeline({
   events,
   milestones,
   empty = "Aún no hay movimientos.",
+  cleaning = false,
 }: {
   events: readonly EventView[];
   milestones: readonly MilestoneView[];
   empty?: string;
+  cleaning?: boolean;
 }) {
   if (events.length === 0) return <p className="text-sm text-slate-600">{empty}</p>;
   const ordered = [...events].sort((a, b) => b.seq - a.seq);
   return (
     <ol className="relative space-y-4 border-l-2 border-slate-200 pl-5" aria-label="Historial del trato">
       {ordered.map((ev) => {
-        const t = eventText(ev, milestones);
+        const t = eventText(ev, milestones, { cleaning });
         return (
           <li key={ev.id} className="relative">
             <span aria-hidden className={cn("absolute -left-[27px] top-1.5 size-3 rounded-full ring-4 ring-slate-50", DOT[t.tone])} />

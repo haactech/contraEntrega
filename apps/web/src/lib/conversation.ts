@@ -126,7 +126,8 @@ export type DockCard =
   | { kind: "delivery" }
   | { kind: "deliver" }
   | { kind: "dispute" }
-  | { kind: "completed" };
+  | { kind: "completed" }
+  | { kind: "checklist" };
 
 export type DockKind = DockCard["kind"];
 
@@ -139,6 +140,14 @@ export function activeCards(view: ConversationView): DockCard[] {
   const status = agreement?.agreement.status ?? null;
 
   if (view.activeProposal && status !== "COMPLETED") out.push({ kind: "proposal" });
+
+  if (agreement && agreement.serviceType === "CLEANING" && agreement.tasks) {
+    // Cleaning: one checklist card (per-task actions) and the single balance payment once all approved.
+    out.push({ kind: "checklist" });
+    if (view.role === "BUYER" && acts.has("PAY_BALANCE")) out.push({ kind: "payment", milestone: "BALANCE" });
+    if (status === "COMPLETED" || nextAction === "DONE") out.push({ kind: "completed" });
+    return out;
+  }
 
   if (agreement) {
     if (view.role === "SELLER") {
@@ -171,6 +180,10 @@ export function chipTargetCard(action: AllowedAction, cards: readonly DockCard[]
     case "APPROVE_DELIVERY":
     case "DISPUTE_DELIVERY":
       return has("delivery") ? "delivery" : null;
+    case "SUBMIT_TASK":
+    case "APPROVE_TASK":
+    case "REQUEST_ADJUSTMENT":
+      return has("checklist") ? "checklist" : null;
     case "REQUEST_REVIEW":
     case "REDELIVER":
     case "UPLOAD_EVIDENCE":

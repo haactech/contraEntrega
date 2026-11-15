@@ -127,6 +127,7 @@ const LABEL: Record<DockKind, string> = {
   deliver: "Entregar trabajo",
   dispute: "Problema reportado",
   completed: "Trato completado",
+  checklist: "Checklist",
 };
 
 /** Active cards anchored above the composer so the pending action is always visible. */

@@ -1,4 +1,4 @@
-import type { AgreementSummary, BuyerNextAction, MilestoneStatus, SellerNextAction } from "@trato/shared";
+import type { AgreementSummary, BuyerNextAction, MilestoneStatus, SellerNextAction, TaskStatus } from "@trato/shared";
 import type { Tone } from "@/components/ui/badge";
 
 export const SELLER_ACTION_CHIP: Record<SellerNextAction, { label: string; tone: Tone }> = {
@@ -69,3 +69,11 @@ export function formatDateTime(iso: string): string {
     minute: "2-digit",
   });
 }
+
+/** Public task status labels (no internal terms). */
+export const TASK_STATUS_LABEL: Record<TaskStatus, { label: string; tone: Tone }> = {
+  TODO: { label: "Por hacer", tone: "neutral" },
+  IN_REVIEW: { label: "Esperando aprobación", tone: "warn" },
+  NEEDS_ADJUSTMENT: { label: "Necesita ajuste", tone: "danger" },
+  APPROVED: { label: "Aprobada", tone: "success" },
+};
