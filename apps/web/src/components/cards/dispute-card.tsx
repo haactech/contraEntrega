@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { sellerAgreement } from "@/lib/conversation";
-import { DeliverCard } from "./deliver-card";
+import { DeliverCard } from "./deliver-lazy";
 import type { CardCtx } from "./types";
 
 /** Dispute: the buyer's reason (as reported, no judgement) and, for the seller, the redelivery CTA. */

@@ -17,7 +17,7 @@ import { PaymentCard } from "./payment-card";
 import { DeliveryCard } from "./delivery-card";
 import { DisputeCard } from "./dispute-card";
 import { CompletedCard } from "./completed-card";
-import { DeliverCard } from "./deliver-card";
+import { DeliverCard } from "./deliver-lazy";
 import type { CardCtx } from "./types";
 
 /** Proposal card wired to the room: confirm/share (seller) or accept (buyer). */
