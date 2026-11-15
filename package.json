@@ -10,7 +10,9 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "dev:api": "pnpm --filter @trato/api dev",
-    "dev:web": "pnpm --filter @trato/web dev"
+    "dev:web": "pnpm --filter @trato/web dev",
+    "dev": "pnpm --filter @trato/web build && pnpm --filter @trato/api dev",
+    "setup:local": "pnpm install && pnpm --filter @trato/web build && pnpm --filter @trato/api db:migrate:local && pnpm --filter @trato/api db:seed:mock:local && node scripts/setup-local.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"
