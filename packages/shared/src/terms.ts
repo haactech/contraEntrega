@@ -1,4 +1,5 @@
-import { splitTotal } from "./money";
+import type { ServiceType } from "./enums";
+import { MONEY_LIMITS, splitTotal } from "./money";
 
 export const CURRENT_TERMS_VERSION = 1;
 
@@ -15,6 +16,15 @@ export interface TermsInput {
   payeeAlias: string;
   payeeLast4: string;
   termsVersion?: number | undefined;
+  /** Only CLEANING adds `serviceType` + `tasks` to the snapshot (GENERIC hashes stay identical). */
+  serviceType?: ServiceType | undefined;
+  tasks?: readonly TermsTask[] | undefined;
+}
+
+export interface TermsTask {
+  position: number;
+  title: string;
+  description?: string | null | undefined;
 }
 
 export interface TermsSnapshot {
@@ -31,12 +41,18 @@ export interface TermsSnapshot {
   payeeAlias: string;
   payeeLast4: string;
   termsVersion: number;
+  serviceType?: "CLEANING";
+  tasks?: { position: number; title: string; description: string | null }[];
 }
 
 /** Canonical terms object that is sealed (hashed) when the agreement is shared. */
 export function buildTermsSnapshot(input: TermsInput): TermsSnapshot {
-  const split = splitTotal(input.totalCents, input.advanceCents);
-  return {
+  const cleaning = input.serviceType === "CLEANING";
+  // CLEANING pays everything on completion: advance 0 / balance = total (splitTotal needs advance >= 1).
+  const split = cleaning
+    ? cleaningSplit(input.totalCents, input.advanceCents)
+    : splitTotal(input.totalCents, input.advanceCents);
+  const snapshot: TermsSnapshot = {
     code: input.code,
     title: input.title.trim(),
     description: input.description.trim(),
@@ -51,6 +67,28 @@ export function buildTermsSnapshot(input: TermsInput): TermsSnapshot {
     payeeLast4: input.payeeLast4,
     termsVersion: input.termsVersion ?? CURRENT_TERMS_VERSION,
   };
+  if (cleaning) {
+    snapshot.serviceType = "CLEANING";
+    snapshot.tasks = [...(input.tasks ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((t) => ({
+        position: t.position,
+        title: t.title.trim(),
+        description: t.description?.trim() ? t.description.trim() : null,
+      }));
+  }
+  return snapshot;
+}
+
+function cleaningSplit(totalCents: number, advanceCents: number) {
+  if (advanceCents !== 0) throw new RangeError("Un trato de limpieza no lleva anticipo.");
+  if (!Number.isSafeInteger(totalCents) || totalCents < 1) {
+    throw new RangeError("El total debe ser de al menos $0.01.");
+  }
+  if (totalCents > MONEY_LIMITS.maxTotalCents) {
+    throw new RangeError("El total no puede superar $2,000,000.00.");
+  }
+  return { totalCents, advanceCents: 0, balanceCents: totalCents };
 }
 
 /** Deterministic JSON: object keys sorted recursively, undefined dropped, no whitespace. */

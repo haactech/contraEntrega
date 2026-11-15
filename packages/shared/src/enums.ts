@@ -95,6 +95,11 @@ export const EVENT_TYPES = [
   "AGREEMENT_COMPLETED",
   /** v0.3: terms revised (DRAFT|SHARED only) before acceptance. Visible to the buyer. */
   "TERMS_REVISED",
+  /** Cleaning template: per-task review loop. Visible to the buyer. */
+  "TASK_SUBMITTED",
+  "TASK_APPROVED",
+  "TASK_ADJUSTMENT_REQUESTED",
+  "ALL_TASKS_APPROVED",
 ] as const;
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;
@@ -216,3 +221,25 @@ export type ProposalField = z.infer<typeof ProposalFieldSchema>;
 export const ACTION_VIAS = ["web", "chat", "mcp"] as const;
 export const ActionViaSchema = z.enum(ACTION_VIAS);
 export type ActionVia = z.infer<typeof ActionViaSchema>;
+
+/* ------------------------------------------------------- cleaning template */
+
+export const SERVICE_TYPES = ["GENERIC", "CLEANING"] as const;
+export const ServiceTypeSchema = z.enum(SERVICE_TYPES);
+export type ServiceType = z.infer<typeof ServiceTypeSchema>;
+
+export const PAYMENT_STRATEGIES = ["ADVANCE_AND_BALANCE", "ON_COMPLETION"] as const;
+export const PaymentStrategySchema = z.enum(PAYMENT_STRATEGIES);
+export type PaymentStrategy = z.infer<typeof PaymentStrategySchema>;
+
+export const TASK_STATUSES = ["TODO", "IN_REVIEW", "NEEDS_ADJUSTMENT", "APPROVED"] as const;
+export const TaskStatusSchema = z.enum(TASK_STATUSES);
+export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+
+export const TASK_REVIEW_DECISIONS = ["APPROVE", "REQUEST_ADJUSTMENT"] as const;
+export const TaskReviewDecisionSchema = z.enum(TASK_REVIEW_DECISIONS);
+export type TaskReviewDecision = z.infer<typeof TaskReviewDecisionSchema>;
+
+export const EVIDENCE_KINDS = ["BEFORE", "AFTER"] as const;
+export const EvidenceKindSchema = z.enum(EVIDENCE_KINDS);
+export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;

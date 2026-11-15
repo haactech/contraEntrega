@@ -12,6 +12,12 @@ export const API_ROUTES = {
   agreementEvidence: (id: string) => `/api/agreements/${e(id)}/evidence`,
   agreementEvidenceItem: (id: string, evidenceId: string) =>
     `/api/agreements/${e(id)}/evidence/${e(evidenceId)}`,
+  agreementTaskEvidence: (id: string, taskId: string) =>
+    `/api/agreements/${e(id)}/tasks/${e(taskId)}/evidence`,
+  agreementTaskEvidenceItem: (id: string, taskId: string, evidenceId: string) =>
+    `/api/agreements/${e(id)}/tasks/${e(taskId)}/evidence/${e(evidenceId)}`,
+  agreementTaskSubmit: (id: string, taskId: string) =>
+    `/api/agreements/${e(id)}/tasks/${e(taskId)}/submit`,
   agreementRequestReview: (id: string) => `/api/agreements/${e(id)}/request-review`,
   agreementExport: (id: string) => `/api/agreements/${e(id)}/export`,
 
@@ -21,6 +27,10 @@ export const API_ROUTES = {
     `/api/public/tratos/${e(token)}/milestones/${e(milestoneId)}/payment-requests`,
   publicRefreshPaymentRequest: (token: string, paymentRequestId: string) =>
     `/api/public/tratos/${e(token)}/payment-requests/${e(paymentRequestId)}/refresh`,
+  publicTaskApprove: (token: string, taskId: string) =>
+    `/api/public/tratos/${e(token)}/tasks/${e(taskId)}/approve`,
+  publicTaskRequestAdjustment: (token: string, taskId: string) =>
+    `/api/public/tratos/${e(token)}/tasks/${e(taskId)}/request-adjustment`,
   publicReview: (token: string) => `/api/public/tratos/${e(token)}/review`,
   publicExport: (token: string) => `/api/public/tratos/${e(token)}/export`,
 
@@ -50,6 +60,8 @@ export const APP_ROUTES = {
    * `room(id)`). The v0.2 form stays reachable at `newAgreementForm`.
    */
   newAgreement: "/tratos/nuevo",
+  /** Cleaning template creation form. */
+  newCleaning: "/tratos/nuevo/limpieza",
   newAgreementForm: "/tratos/nuevo/formulario",
   /** Seller's conversation room. The buyer keeps using `buyer(token)`, which hosts the same room. */
   room: (conversationId: string) => `/salas/${e(conversationId)}`,

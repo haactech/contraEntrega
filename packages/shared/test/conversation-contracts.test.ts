@@ -92,8 +92,8 @@ describe("api keys", () => {
 });
 
 describe("MCP tools", () => {
-  const spec = ["list_agreements", "get_agreement", "create_agreement", "share_agreement", "add_evidence", "request_review", "export_agreement",
-    "buyer_get_agreement", "buyer_accept", "buyer_review", "buyer_create_payment_request", "buyer_refresh_payment"];
+  const spec = ["list_agreements", "get_agreement", "create_agreement", "share_agreement", "add_evidence", "request_review", "submit_task", "export_agreement",
+    "buyer_get_agreement", "buyer_accept", "buyer_review", "review_task", "buyer_create_payment_request", "buyer_refresh_payment"];
   it("registers exactly the spec tools, none can mark PAID", () => {
     expect(MCP_TOOLS.map((t) => t.name)).toEqual(spec);
     expect(new Set(MCP_TOOLS.map((t) => t.name)).size).toBe(MCP_TOOLS.length);

@@ -8,3 +8,4 @@ export * from "./contracts";
 export * from "./pey";
 export * from "./state-machine";
 export * from "./terms";
+export * from "./tasks";

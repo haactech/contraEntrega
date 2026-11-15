@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AllowedActionSchema } from "../actions";
-import { MilestoneKindSchema, PaymentMethodSchema, ReviewDecisionSchema, AgreementStatusSchema } from "../enums";
+import { TaskReviewDecisionSchema, MilestoneKindSchema, PaymentMethodSchema, ReviewDecisionSchema, AgreementStatusSchema } from "../enums";
 import { mxnToCents } from "../money";
 import { DateOnlySchema, PhoneSchema, Sha256HexSchema } from "./common";
 import { EVIDENCE_LIMITS, type CreateAgreementInput } from "./agreements";
@@ -123,6 +123,12 @@ export const ExportAgreementMcpOutputSchema = z.object({
   allowedActions: AllowedActionsField,
 });
 
+export const SubmitTaskMcpInputSchema = z.object({
+  agreementId: AgreementId,
+  taskId: z.string().min(1).max(64).describe("Id de la tarea (tasks[].id del trato)."),
+  note: z.string().trim().max(500).optional().describe("Mensaje opcional para el cliente."),
+});
+
 /* ----------------------------------------------------------------- buyer */
 
 export const BuyerGetAgreementMcpInputSchema = z.object({ buyerToken: BuyerToken });
@@ -141,6 +147,21 @@ export const BuyerReviewMcpInputSchema = z.object({
   comment: z.string().trim().max(1000).optional().describe("Obligatorio (mín. 5 caracteres) si decision = DISPUTE."),
   buyerName: z.string().trim().min(2).max(80),
 });
+
+export const ReviewTaskMcpInputSchema = z
+  .object({
+    buyerToken: BuyerToken,
+    taskId: z.string().min(1).max(64).describe("Id de la tarea (tasks[].id)."),
+    decision: TaskReviewDecisionSchema.describe(
+      "APPROVE: la tarea quedó bien. REQUEST_ADJUSTMENT: pedir un ajuste (exige reason).",
+    ),
+    reason: z.string().trim().max(500).optional().describe("Obligatorio (3 a 500 caracteres) si decision = REQUEST_ADJUSTMENT."),
+  })
+  .superRefine((v, ctx) => {
+    if (v.decision === "REQUEST_ADJUSTMENT" && (v.reason ?? "").length < 3) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Explica brevemente qué falta (mínimo 3 caracteres)." });
+    }
+  });
 
 export const BuyerCreatePaymentRequestMcpInputSchema = z.object({
   buyerToken: BuyerToken,
@@ -233,6 +254,16 @@ export const MCP_TOOLS = [
     outputSchema: SellerAgreementMcpOutputSchema,
   },
   {
+    name: "submit_task",
+    audience: "seller",
+    readOnly: false,
+    description:
+      "Para tratos de limpieza: envía UNA tarea del checklist a revisión del cliente. Precondición: el trato está en curso, la tarea está por hacer o necesita ajuste, y ya tiene al menos una foto del resultado (AFTER) en la revisión actual; las fotos se suben desde la app. No aprueba la tarea ni cobra: solo el cliente aprueba cada tarea, y aprobar no paga. Falla con INVALID_STATE si no se cumple la precondición o el trato no es de limpieza. " +
+      COMMON_LIMITS,
+    inputSchema: SubmitTaskMcpInputSchema,
+    outputSchema: SellerAgreementMcpOutputSchema,
+  },
+  {
     name: "export_agreement",
     audience: "seller",
     readOnly: true,
@@ -266,6 +297,15 @@ export const MCP_TOOLS = [
     description:
       "Para el comprador: revisa la entrega. APPROVE confirma que lo recibió conforme y habilita el cobro del saldo (no lo paga); DISPUTE reporta un problema y exige un comentario. Precondición: la entrega está en revisión (allowedActions incluye APPROVE_DELIVERY). La decisión debe ser de la persona; no la tomes por tu cuenta.",
     inputSchema: BuyerReviewMcpInputSchema,
+    outputSchema: BuyerAgreementMcpOutputSchema,
+  },
+  {
+    name: "review_task",
+    audience: "buyer",
+    readOnly: false,
+    description:
+      "Para el cliente de un trato de limpieza: revisa UNA tarea enviada. APPROVE la aprueba; REQUEST_ADJUSTMENT pide un ajuste y exige reason (3 a 500 caracteres). Solo el cliente (con su buyerToken) puede aprobar; la llave del prestador no puede aprobar su propio trabajo y recibe 403. Precondición: la tarea está en revisión. Aprobar una tarea NO paga: al aprobar todas las tareas se habilita el pago, que la persona debe autorizar en su app bancaria. La decisión debe ser de la persona; no la tomes por tu cuenta.",
+    inputSchema: ReviewTaskMcpInputSchema,
     outputSchema: BuyerAgreementMcpOutputSchema,
   },
   {

@@ -4,6 +4,11 @@ import {
   AgreementStatusSchema,
   BuyerNextActionSchema,
   EventTypeSchema,
+  EvidenceKindSchema,
+  PaymentStrategySchema,
+  ServiceTypeSchema,
+  TaskReviewDecisionSchema,
+  TaskStatusSchema,
   MilestoneKindSchema,
   MilestoneStatusSchema,
   PaymentMethodSchema,
@@ -31,6 +36,12 @@ export const SellerSummarySchema = z.object({
 });
 export type SellerSummary = z.infer<typeof SellerSummarySchema>;
 
+export const TaskProgressSchema = z.object({
+  approved: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+export type TaskProgress = z.infer<typeof TaskProgressSchema>;
+
 export const AgreementSummarySchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -42,6 +53,8 @@ export const AgreementSummarySchema = z.object({
   /** Room of this agreement (every agreement has one; created lazily for pre-v0.3 data). */
   conversationId: z.string().nullable(),
   nextAction: SellerNextActionSchema,
+  serviceType: ServiceTypeSchema,
+  taskProgress: TaskProgressSchema.nullable(),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,
 });
@@ -85,9 +98,38 @@ export const EvidenceViewSchema = z.object({
   sizeBytes: z.number().int().nonnegative(),
   sha256: Sha256HexSchema,
   submitted: z.boolean(),
+  /** Cleaning: the task this photo belongs to (null for generic evidence). */
+  taskId: z.string().nullable(),
+  kind: EvidenceKindSchema,
+  /** Cleaning: task revision the photo was uploaded for (null for generic evidence). */
+  revisionNumber: z.number().int().positive().nullable(),
   createdAt: IsoDateTimeSchema,
 });
 export type EvidenceView = z.infer<typeof EvidenceViewSchema>;
+
+export const TaskReviewViewSchema = z.object({
+  id: z.string(),
+  revisionNumber: z.number().int().positive(),
+  decision: TaskReviewDecisionSchema,
+  comment: z.string().nullable(),
+  reviewerName: z.string(),
+  createdAt: IsoDateTimeSchema,
+});
+export type TaskReviewView = z.infer<typeof TaskReviewViewSchema>;
+
+export const TaskViewSchema = z.object({
+  id: z.string(),
+  position: z.number().int().nonnegative(),
+  title: z.string(),
+  description: z.string().nullable(),
+  status: TaskStatusSchema,
+  revision: z.number().int().positive(),
+  submittedAt: IsoDateTimeSchema.nullable(),
+  approvedAt: IsoDateTimeSchema.nullable(),
+  evidence: z.array(EvidenceViewSchema),
+  reviews: z.array(TaskReviewViewSchema),
+});
+export type TaskView = z.infer<typeof TaskViewSchema>;
 
 export const EventViewSchema = z.object({
   id: z.string(),
@@ -142,6 +184,11 @@ export const SellerAgreementViewSchema = z.object({
   milestones: z.array(MilestoneViewSchema),
   paymentRequests: z.array(PaymentRequestViewSchema),
   evidence: z.array(EvidenceViewSchema),
+  serviceType: ServiceTypeSchema,
+  paymentStrategy: PaymentStrategySchema,
+  /** Cleaning checklist; null for generic agreements. */
+  tasks: z.array(TaskViewSchema).nullable(),
+  taskProgress: TaskProgressSchema.nullable(),
   reviews: z.array(ReviewViewSchema),
   events: z.array(EventViewSchema),
   shareUrl: z.string().nullable(),
@@ -159,6 +206,11 @@ export const BuyerAgreementViewSchema = z.object({
   milestones: z.array(MilestoneViewSchema),
   paymentRequests: z.array(PaymentRequestViewSchema),
   evidence: z.array(EvidenceViewSchema),
+  serviceType: ServiceTypeSchema,
+  paymentStrategy: PaymentStrategySchema,
+  /** Cleaning checklist; null for generic agreements. */
+  tasks: z.array(TaskViewSchema).nullable(),
+  taskProgress: TaskProgressSchema.nullable(),
   reviews: z.array(ReviewViewSchema),
   events: z.array(EventViewSchema),
   activePaymentRequest: PaymentRequestViewSchema.nullable(),
