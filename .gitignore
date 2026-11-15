@@ -17,3 +17,6 @@ infra/seed/*.local.sql
 # Claude Code local
 .claude/worktrees/
 .claude/settings.local.json
+
+# LLM evals: resultados locales
+packages/llm/evals/results/
