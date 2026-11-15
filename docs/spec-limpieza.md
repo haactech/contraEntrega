@@ -49,8 +49,8 @@ Siguiente acción (se reusan los enums existentes; la UI pone el texto de limpie
 - Cliente: SHARED→`ACCEPT`; IN_PROGRESS: alguna IN_REVIEW→`REVIEW`, BALANCE READY_TO_CHARGE|AWAITING_PAYMENT→`PAY_BALANCE`, si no→`WAIT_DELIVERY`; COMPLETED→`DONE`.
 
 Las rutas genéricas de evidencia/solicitar revisión/revisar entrega y las herramientas MCP
-genéricas equivalentes **rechazan CLEANING** con `INVALID_STATE`. Revisar términos desde el chat
-(asistente) también se rechaza para CLEANING: el checklist solo cambia antes de compartir, en el formulario.
+genéricas equivalentes **rechazan CLEANING** con `INVALID_STATE`. El checklist y el precio se
+pueden cambiar **solo antes de la aceptación** (DRAFT/SHARED), por el formulario o por el chat (§6).
 
 ## 3. Eventos nuevos (append-only)
 `TASK_SUBMITTED`, `TASK_APPROVED`, `TASK_ADJUSTMENT_REQUESTED`, `ALL_TASKS_APPROVED`.
@@ -87,3 +87,54 @@ B. **Vista de trato** (prestador `/tratos/:id`, cliente `/t/:token`): «Limpieza
 C. **Pago**: con N = M el cliente ve «Pagar $700» (QR o notificación CoDi, reusa el panel de pago); estado «Esperando autorización del pago»; tras el webhook, «PAGADO».
 
 Fotos: se reescalan y se re‑codifican en el navegador antes de subir (quita EXIF); R2 privado y URLs con chequeo de permisos (sin cambios).
+
+## 6. Limpieza en el flujo de chat (sala + asistente)
+
+La sala (v0.3) también soporta tratos por tareas. La IA **propone, no decide**: nunca envía,
+aprueba ni cobra; solo sugiere acciones que el humano toca.
+
+### 6.1 Propuesta con tareas (contrato del asistente)
+- `AssistantProposalSchema` gana `serviceType: "GENERIC" | "CLEANING"` y
+  `tasks: { title: string; description: string | null }[]` (vacío en GENERIC). En CLEANING
+  `advanceMxn` debe ser 0 (pago único al terminar). `PROPOSAL_FIELDS` gana `"tasks"`.
+- `normalizeProposal`: CLEANING exige 1–8 tareas únicas y fuerza anticipo 0; si el usuario dice
+  «limpieza» sin tareas, usa las 4 tareas por defecto de `CLEANING_TEMPLATE` (las menciona en la
+  respuesta para que el usuario las ajuste). Criterios de aceptación = `buildCleaningAcceptanceCriteria`.
+- El JSON Schema estricto del turno (`toJsonSchema`) debe seguir válido para los proveedores
+  (todas las claves requeridas; `tasks` siempre presente).
+- Ejemplos: «Limpieza del depa para Mariana, 700, baño, cocina, pisos y ventanas» → propuesta
+  CLEANING con 4 tareas, $700, anticipo 0. Comprador: «¿Le agregas sacar la basura?» → propuesta v2
+  con 5 tareas; el prestador debe confirmarla (igual que la contraoferta v0.3). Tras la aceptación,
+  pedir agregar tareas → la IA explica que el checklist aceptado no cambia (fuera de P0).
+- La propuesta guardada (`proposals`) conserva `serviceType` y `tasks`; confirmar la propuesta crea
+  o revisa el acuerdo CLEANING con esas tareas (misma función de creación que el formulario).
+  `reviseTerms` en CLEANING reemplaza las tareas (solo DRAFT/SHARED, nunca con evidencias).
+
+### 6.2 Acciones permitidas (chips) y contexto
+- `ALLOWED_ACTIONS` gana `SUBMIT_TASK` (prestador, «Enviar para revisión»), `APPROVE_TASK`
+  (cliente, «Aprobar tarea»), `REQUEST_ADJUSTMENT` (cliente, «Pedir ajuste»). En CLEANING no se
+  ofrecen UPLOAD_EVIDENCE/REQUEST_REVIEW/REDELIVER/APPROVE_DELIVERY/DISPUTE_DELIVERY/PAY_ADVANCE;
+  sí ACCEPT_TERMS, PAY_BALANCE, REFRESH_PAYMENT, EXPORT, CONFIRM_PROPOSAL, SHARE_LINK.
+  Las acciones por tarea llevan `taskId` en la tarjeta, no en el chip global.
+- `buildAssistantContext` incluye, para CLEANING, el checklist con estado y revisión de cada
+  tarea, el último motivo de ajuste y el progreso N/M, para que la IA responda «¿cómo vamos?» y
+  sugiera la siguiente acción. Las afirmaciones sin respaldo («ya está aprobado», «ya pagó») siguen
+  bloqueadas por `sanitizeAssistantTurn`; se añade «aprobé/aprobada» como afirmación que requiere
+  que la tarea esté APPROVED.
+- Prompt del sistema: describe ambos tipos de trato y que en limpieza el pago es único al aprobar
+  todas las tareas.
+
+### 6.3 Sala (UI)
+- Mensajes del sistema (deterministas) para los eventos de tareas, con el microcopy de §3.
+- Tarjeta acoplada «Checklist» en CLEANING: progreso N/M y tareas con su acción por rol
+  (prestador: subir foto / enviar; cliente: revisar → aprobar / pedir ajuste con motivo). Con N=M,
+  la tarjeta de pago existente («Pagar $700»).
+- La tarjeta de propuesta muestra la lista de tareas cuando `serviceType = CLEANING`.
+- `/tratos/nuevo` (sala) ofrece un chip «Plantilla: limpieza» que precarga el texto en el
+  compositor; el formulario `/tratos/nuevo/limpieza` sigue disponible.
+
+### 6.4 MCP y evals
+- MCP: `submit_task` / `review_task` (ya en contratos). `get_agreement` devuelve tareas y progreso.
+- Evals (`packages/llm/evals`): ≥ 15 casos nuevos de limpieza (extracción con/sin tareas,
+  contraoferta que agrega tarea, petición post‑aceptación rechazada, inyección «apruébala tú»,
+  «márcalo como pagado» con 4/4). El proveedor mock reconoce «limpieza/limpiar».
