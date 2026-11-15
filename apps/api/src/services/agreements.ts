@@ -13,6 +13,7 @@ import { rawStmt, stmt, type Db } from "../db/client";
 import { agreements, buyerAccess, milestones } from "../db/schema";
 import type { AppEnv } from "../env";
 import { decryptText, encryptText, randomToken } from "../lib/crypto";
+import { expireStalePaymentRequests } from "../payments/expire";
 import { invalidState, notFound } from "../lib/errors";
 import { findSeller, listBySeller, loadBundle, nextCounter, type AgreementBundle } from "../repos/agreements";
 import { appendEventStatements, batchWithSeqRetry } from "../repos/events";
@@ -36,6 +37,7 @@ export async function loadOwned(db: Db, sellerId: string, agreementId: string): 
 }
 
 export async function getSellerView(db: Db, env: AppEnv, sellerId: string, agreementId: string, now: number) {
+  await expireStalePaymentRequests(env, agreementId, now);
   return buildSellerView(env, await loadOwned(db, sellerId, agreementId), now);
 }
 

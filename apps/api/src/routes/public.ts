@@ -1,10 +1,12 @@
 import { Hono } from "hono";
-import { AcceptAgreementRequestSchema } from "@trato/shared";
+import { AcceptAgreementRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { parseJson } from "../lib/validate";
 import { publicKey, rateLimit } from "../middleware/ratelimit";
 import { forbidOwnerSeller, resolveToken } from "../middleware/session";
+import { expireStalePaymentRequests } from "../payments/expire";
+import { createForBuyer, parseIdempotencyKey, refreshForBuyer } from "../services/payments";
 import { acceptAgreement, agreementVersion, etagFor, getBuyerView } from "../services/public";
 
 export const publicRoutes = new Hono<HonoEnv>();
@@ -15,6 +17,8 @@ publicRoutes.use("/tratos/:token/*", resolveToken);
 publicRoutes.get("/tratos/:token", rateLimit("RL_PUBLIC_READ", publicKey("r")), async (c) => {
   const db = createDb(c.env.DB);
   const { agreementId } = c.get("access");
+  // Lazy local expiry (no provider call); bumps the version so the ETag below is already fresh.
+  await expireStalePaymentRequests(c.env, agreementId, Date.now());
   const version = await agreementVersion(db, agreementId);
   const etag = version === null ? null : etagFor(version);
   c.header("Cache-Control", "no-store");
@@ -37,6 +41,35 @@ publicRoutes.post(
   async (c) => {
     const input = await parseJson(c, AcceptAgreementRequestSchema);
     const view = await acceptAgreement(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now());
+    return c.json(view);
+  },
+);
+
+publicRoutes.post(
+  "/tratos/:token/milestones/:milestoneId/payment-requests",
+  rateLimit("RL_PUBLIC_WRITE", publicKey("w")),
+  async (c) => {
+    // Unknown body fields (e.g. amount / bankAccountId) are stripped by the schema: never trusted.
+    const input = await parseJson(c, CreatePaymentRequestSchema);
+    const key = parseIdempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER));
+    const { view, created } = await createForBuyer(
+      c.env,
+      c.get("access").agreementId,
+      c.req.param("milestoneId") ?? "",
+      input,
+      key,
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json(view, created ? 201 : 200);
+  },
+);
+
+publicRoutes.post(
+  "/tratos/:token/payment-requests/:id/refresh",
+  rateLimit("RL_PUBLIC_READ", publicKey("rf")),
+  async (c) => {
+    const view = await refreshForBuyer(c.env, c.get("access").agreementId, c.req.param("id") ?? "", Date.now());
+    c.header("Cache-Control", "no-store");
     return c.json(view);
   },
 );
