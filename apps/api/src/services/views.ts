@@ -76,9 +76,13 @@ const milestoneView = (m: MilestoneRow): MilestoneView => ({
   paidAt: isoOrNull(m.paidAt),
 });
 
-const paymentRequestView = (p: AgreementBundle["paymentRequests"][number]): PaymentRequestView => ({
+export const paymentRequestView = (
+  p: AgreementBundle["paymentRequests"][number],
+  milestoneKind: MilestoneRow["kind"],
+): PaymentRequestView => ({
   id: p.id,
   milestoneId: p.milestoneId,
+  milestoneKind,
   method: p.method,
   status: p.status,
   amountCents: p.amountCents,
@@ -173,6 +177,11 @@ export function sellerSummary(a: AgreementRow, balanceStatus: MilestoneRow["stat
   };
 }
 
+const prViews = (b: AgreementBundle): PaymentRequestView[] => {
+  const kinds = new Map(b.milestones.map((m) => [m.id, m.kind]));
+  return b.paymentRequests.map((p) => paymentRequestView(p, kinds.get(p.milestoneId) ?? "ADVANCE"));
+};
+
 const byKind = (a: MilestoneRow, b: MilestoneRow): number => (a.kind === b.kind ? 0 : a.kind === "ADVANCE" ? -1 : 1);
 
 export async function buildSellerView(
@@ -191,7 +200,7 @@ export async function buildSellerView(
     agreement: agreementCore(b.agreement),
     account: { alias: b.account.alias, last4: b.account.clabeLast4 },
     milestones: [...b.milestones].sort(byKind).map(milestoneView),
-    paymentRequests: b.paymentRequests.map(paymentRequestView),
+    paymentRequests: prViews(b),
     evidence: await Promise.all(b.evidence.map((e) => evidenceView(env, e, nowMs))),
     reviews: b.reviews.map(reviewView),
     events: eventViews(b.events, false),
@@ -202,7 +211,7 @@ export async function buildSellerView(
 }
 
 export async function buildBuyerView(env: AppEnv, b: AgreementBundle, nowMs: number): Promise<BuyerAgreementView> {
-  const prs = b.paymentRequests.map(paymentRequestView);
+  const prs = prViews(b);
   const active = [...prs].reverse().find((p) => p.status === "AWAITING_PAYMENT") ?? null;
   return {
     agreement: agreementCore(b.agreement),

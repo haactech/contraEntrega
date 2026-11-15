@@ -7,6 +7,7 @@ import {
   ERROR_CODES,
   ERROR_HTTP_STATUS,
   ErrorEnvelopeSchema,
+  PaymentRequestViewSchema,
   ReviewRequestSchema,
 } from "../src";
 
@@ -65,5 +66,17 @@ describe("errors and routes", () => {
     expect(API_ROUTES.publicTrato("abc")).toBe("/api/public/tratos/abc");
     expect(API_ROUTES.publicPaymentRequests("t", "m")).toBe("/api/public/tratos/t/milestones/m/payment-requests");
     expect(API_ROUTES.agreementShare("a/b")).toBe("/api/agreements/a%2Fb/share");
+  });
+});
+
+describe("PaymentRequestViewSchema", () => {
+  it("requires milestoneKind", () => {
+    const base = {
+      id: "p", milestoneId: "m", method: "CODI_QR", status: "AWAITING_PAYMENT", amountCents: 100,
+      numRef: "0000001", qrString: null, phoneLast4: null, expiresAt: null,
+      createdAt: "2026-11-14T00:00:00.000Z", paidAt: null,
+    };
+    expect(PaymentRequestViewSchema.safeParse(base).success).toBe(false);
+    expect(PaymentRequestViewSchema.safeParse({ ...base, milestoneKind: "ADVANCE" }).success).toBe(true);
   });
 });

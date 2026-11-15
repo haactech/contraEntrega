@@ -60,6 +60,7 @@ export type MilestoneView = z.infer<typeof MilestoneViewSchema>;
 export const PaymentRequestViewSchema = z.object({
   id: z.string(),
   milestoneId: z.string(),
+  milestoneKind: MilestoneKindSchema,
   method: PaymentMethodSchema,
   status: PaymentRequestStatusSchema,
   amountCents: CentsSchema,
