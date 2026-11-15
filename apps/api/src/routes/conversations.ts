@@ -5,8 +5,9 @@ import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { requireSeller } from "../middleware/session";
 import { conversationEtag, etagOfView, buildConversationView, listConversationSummaries } from "../services/conversation-view";
-import { createConversation, loadOwnedConversation, postSellerMessage } from "../services/conversations";
+import { confirmProposal, createConversation, loadOwnedConversation, postSellerMessage } from "../services/conversations";
 import { runInBackground } from "../assistant/tasks";
+import { viaOf } from "../lib/via";
 import { parseJson } from "../lib/validate";
 
 export const conversationRoutes = new Hono<HonoEnv>();
@@ -63,4 +64,18 @@ conversationRoutes.post("/:id/messages", async (c) => {
   if (background) runInBackground(c, background());
   c.header("Cache-Control", "no-store");
   return c.json(view);
+});
+
+conversationRoutes.post("/:id/proposals/:proposalId/confirm", async (c) => {
+  const res = await confirmProposal(
+    c.env,
+    createDb(c.env.DB),
+    sellerId(c),
+    c.req.param("id"),
+    c.req.param("proposalId"),
+    Date.now(),
+    viaOf(c) ?? "chat",
+  );
+  c.header("Cache-Control", "no-store");
+  return c.json(res);
 });

@@ -5,8 +5,9 @@ import {
   type AcceptAgreementRequest,
   type BuyerAgreementView,
 } from "@trato/shared";
-import { stmt, type Db } from "../db/client";
+import { rawStmt, stmt, type Db } from "../db/client";
 import { agreements, milestones } from "../db/schema";
+import { GUARD_SQL } from "../payments/common";
 import type { AppEnv } from "../env";
 import { AppError, invalidState, notFound } from "../lib/errors";
 import { loadBundle } from "../repos/agreements";
@@ -69,6 +70,25 @@ export async function acceptAgreement(
           .update(milestones)
           .set({ status: transition.advanceStatus })
           .where(and(eq(milestones.agreementId, agreementId), eq(milestones.kind, "ADVANCE"), eq(milestones.status, "PENDING_ACCEPTANCE"), guard)),
+      ),
+      // The confirmed proposal of this room is now ACCEPTED; anything still OPEN is moot.
+      rawStmt(
+        env.DB,
+        `UPDATE proposals SET status = 'ACCEPTED'
+         WHERE status = 'SELLER_CONFIRMED' AND terms_sha256 = ?
+           AND conversation_id IN (SELECT id FROM conversations WHERE agreement_id = ?) AND ${GUARD_SQL}`,
+        b.agreement.termsSha256,
+        agreementId,
+        agreementId,
+        writeId,
+      ),
+      rawStmt(
+        env.DB,
+        `UPDATE proposals SET status = 'SUPERSEDED'
+         WHERE status = 'OPEN' AND conversation_id IN (SELECT id FROM conversations WHERE agreement_id = ?) AND ${GUARD_SQL}`,
+        agreementId,
+        agreementId,
+        writeId,
       ),
       ...appendEventStatements(env.DB, {
         agreementId,

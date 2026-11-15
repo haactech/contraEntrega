@@ -1,8 +1,15 @@
-import type { ConversationAuthorType, ConversationView } from "@trato/shared";
-import { eq } from "drizzle-orm";
+import {
+  CreateAgreementInputSchema,
+  type ActionVia,
+  type ConfirmProposalResponse,
+  type ConversationAuthorType,
+  type ConversationView,
+} from "@trato/shared";
+import { and, eq } from "drizzle-orm";
 import { requestAssistantTurn } from "../assistant/orchestrator";
 import { shouldAssistantRespond } from "../assistant/policy";
-import { agreements } from "../db/schema";
+import { agreements, proposals } from "../db/schema";
+import { invalidState } from "../lib/errors";
 import { findSeller } from "../repos/agreements";
 import type { Db } from "../db/client";
 import type { AppEnv } from "../env";
@@ -16,7 +23,9 @@ import {
   type ConversationRow,
 } from "../repos/conversations";
 import { loadBundle } from "../repos/agreements";
-import { buildConversationView } from "./conversation-view";
+import { buildConversationView, parseTerms } from "./conversation-view";
+import { createAgreement, reviseTerms, shareAgreement } from "./agreements";
+import { rawStmt } from "../db/client";
 
 /** Seller's own conversation; 404 (not 403) for someone else's. */
 export async function loadOwnedConversation(db: Db, sellerId: string, id: string): Promise<ConversationRow> {
@@ -102,4 +111,76 @@ export async function postBuyerMessage(env: AppEnv, db: Db, agreementId: string,
   if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
   const conv = await ensureConversationForAgreement(db, env.DB, b.agreement, now);
   return storeAndRequest(env, db, conv, "BUYER", b.agreement.buyerAcceptedName ?? b.agreement.buyerName, text, now);
+}
+
+/**
+ * The seller confirms the current OPEN proposal: no agreement yet -> create it (linking this
+ * room) and share; agreement DRAFT | SHARED -> `reviseTerms` (new hash, `TERMS_REVISED`) keeping the
+ * same link. Always through the existing services, so every guard applies; the assistant only
+ * proposed.
+ *
+ * Idempotency / races: the OPEN -> SELLER_CONFIRMED claim is a conditional UPDATE, so a double
+ * click (or two tabs) has exactly one winner and a stale proposal gets 409. If the agreement step
+ * fails the proposal goes back to OPEN so the seller can retry.
+ * The proposal's hash is then replaced by the agreement's sealed `terms_sha256`: that is the value
+ * the buyer must send to accept.
+ */
+export async function confirmProposal(
+  env: AppEnv,
+  db: Db,
+  sellerId: string,
+  conversationId: string,
+  proposalId: string,
+  now: number,
+  via: ActionVia = "chat",
+): Promise<ConfirmProposalResponse> {
+  const conv = await loadOwnedConversation(db, sellerId, conversationId);
+  const row = (await db.select().from(proposals).where(and(eq(proposals.id, proposalId), eq(proposals.conversationId, conv.id))).limit(1))[0];
+  if (!row) throw notFound("No encontramos esta propuesta.");
+  if (row.status !== "OPEN") throw invalidState("Esta propuesta ya no está vigente. Revisa la más reciente.");
+  if (conv.agreementId) {
+    const status = (await db.select({ s: agreements.status }).from(agreements).where(eq(agreements.id, conv.agreementId)).limit(1))[0]?.s;
+    if (status !== "DRAFT" && status !== "SHARED") {
+      throw invalidState("Las condiciones ya fueron aceptadas y no se pueden cambiar.");
+    }
+  }
+
+  const claim = await env.DB.prepare("UPDATE proposals SET status = 'SELLER_CONFIRMED', confirmed_at = ? WHERE id = ? AND status = 'OPEN'")
+    .bind(now, row.id)
+    .run();
+  if (claim.meta.changes !== 1) throw invalidState("Esta propuesta ya no está vigente. Revisa la más reciente.");
+
+  try {
+    const t = parseTerms(row);
+    const input = CreateAgreementInputSchema.parse({
+      title: t.title,
+      description: t.description,
+      acceptanceCriteria: t.acceptanceCriteria,
+      buyerName: t.buyerName,
+      ...(t.dueDate ? { dueDate: t.dueDate } : {}),
+      totalCents: t.totalCents,
+      advanceCents: t.advanceCents,
+    });
+    let agreementId = conv.agreementId;
+    if (agreementId) await reviseTerms(db, env, sellerId, agreementId, input, now, { via });
+    else agreementId = (await createAgreement(db, env, sellerId, input, now, { conversationId: conv.id, via })).agreement.id;
+    const shared = await shareAgreement(db, env, sellerId, agreementId, false, now, { via });
+
+    await env.DB.batch([
+      rawStmt(env.DB, "UPDATE proposals SET terms_sha256 = ? WHERE id = ?", shared.agreement.agreement.termsSha256, row.id),
+      rawStmt(env.DB, "UPDATE proposals SET status = 'SUPERSEDED' WHERE conversation_id = ? AND id <> ? AND status = 'SELLER_CONFIRMED'", conv.id, row.id),
+      rawStmt(env.DB, "UPDATE conversations SET version = version + 1, updated_at = ? WHERE id = ?", now, conv.id),
+    ]);
+    return {
+      conversation: await buildConversationView(env, db, conv.id, "SELLER", now),
+      shareUrl: shared.shareUrl,
+      whatsappUrl: shared.whatsappUrl,
+    };
+  } catch (err) {
+    await env.DB.prepare("UPDATE proposals SET status = 'OPEN', confirmed_at = NULL WHERE id = ? AND status = 'SELLER_CONFIRMED'")
+      .bind(row.id)
+      .run()
+      .catch(() => undefined);
+    throw err;
+  }
 }
