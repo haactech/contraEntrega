@@ -43,6 +43,7 @@ describe("asistente (stub determinista): propuestas y versiones", () => {
     const msgs = messagesOf(v1);
     expect(msgs.map((m) => [m.authorType, m.kind])).toEqual([["SELLER", "TEXT"], ["ASSISTANT", "PROPOSAL"]]);
     expect(msgs[1]?.assistant).toEqual({ provider: "mock", model: "mock-rules" });
+    expect(msgs.map((m) => m.system)).toEqual([false, false]);
     expect(msgs[1]?.proposal).toMatchObject({ version: 1, status: "OPEN", terms: { totalCents: 2_000_000, advanceCents: 800_000, balanceCents: 1_200_000, buyerName: "Mariana" } });
     expect(v1.activeProposal?.id).toBe(msgs[1]?.proposal?.id);
     expect(v1.allowedActions).toContain("CONFIRM_PROPOSAL");
@@ -108,7 +109,7 @@ describe("política y proveedor", () => {
     expect(p.calls).toBe(1); // no reintenta
     const v = await sellerRoom(cookie, room);
     const last = messagesOf(v).at(-1);
-    expect(last).toMatchObject({ authorType: "ASSISTANT", authorName: "Sistema", text: ASSISTANT_FAILURE_TEXT, assistant: null });
+    expect(last).toMatchObject({ authorType: "ASSISTANT", authorName: "Sistema", text: ASSISTANT_FAILURE_TEXT, assistant: null, system: true });
     expect(v.activeProposal).toBeNull();
     const rows = (await env.DB.prepare("SELECT * FROM llm_calls WHERE conversation_id = ?").bind(room).all<Record<string, unknown>>()).results;
     expect(rows).toHaveLength(1);

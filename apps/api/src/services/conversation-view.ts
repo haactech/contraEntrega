@@ -160,6 +160,7 @@ export async function buildConversationView(
       authorName: m.authorName,
       kind: m.kind,
       text: m.bodyText,
+      system: m.authorType === "ASSISTANT" && m.authorName === SYSTEM_AUTHOR,
       proposal: p ? proposalView(p) : null,
       assistant: m.authorType === "ASSISTANT" && m.authorName !== SYSTEM_AUTHOR && provider && model ? { provider, model } : null,
     });

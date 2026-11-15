@@ -33,6 +33,7 @@ export const API_ROUTES = {
   publicMessages: (token: string) => `/api/public/tratos/${e(token)}/messages`,
 
   apiKeys: "/api/api-keys",
+  /** DELETE revokes the key and answers 204 with no body. */
   apiKey: (id: string) => `/api/api-keys/${e(id)}`,
   mcp: "/mcp",
 
@@ -53,5 +54,7 @@ export const APP_ROUTES = {
   /** Seller's conversation room. The buyer keeps using `buyer(token)`, which hosts the same room. */
   room: (conversationId: string) => `/salas/${e(conversationId)}`,
   agreement: (id: string) => `/tratos/${e(id)}`,
+  /** Seller settings: connect agents (MCP api keys). */
+  agents: "/ajustes/agentes",
   buyer: (token: string) => `/t/${e(token)}`,
 } as const;

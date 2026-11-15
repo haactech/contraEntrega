@@ -4,6 +4,7 @@ import {
   agreementEvents,
   agreements,
   buyerAccess,
+  conversations,
   demoBankAccounts,
   evidence,
   milestones,
@@ -27,11 +28,12 @@ export interface AgreementBundle {
   reviews: (typeof reviews.$inferSelect)[];
   events: (typeof agreementEvents.$inferSelect)[];
   activeAccess: typeof buyerAccess.$inferSelect | null;
+  conversationId: string | null;
 }
 
-/** Loads the whole agreement: 7 independent reads issued in parallel. */
+/** Loads the whole agreement: 8 independent reads issued in parallel. */
 export async function loadBundle(db: Db, agreementId: string): Promise<AgreementBundle | null> {
-  const [head, ms, prs, ev, rv, evs, acc] = await Promise.all([
+  const [head, ms, prs, ev, rv, evs, acc, conv] = await Promise.all([
     db
       .select({ agreement: agreements, seller: sellers, account: demoBankAccounts })
       .from(agreements)
@@ -60,6 +62,7 @@ export async function loadBundle(db: Db, agreementId: string): Promise<Agreement
       .where(and(eq(buyerAccess.agreementId, agreementId), isNull(buyerAccess.revokedAt)))
       .orderBy(desc(buyerAccess.issuedAt))
       .limit(1),
+    db.select({ id: conversations.id }).from(conversations).where(eq(conversations.agreementId, agreementId)).limit(1),
   ]);
   const h = head[0];
   if (!h) return null;
@@ -73,6 +76,7 @@ export async function loadBundle(db: Db, agreementId: string): Promise<Agreement
     reviews: rv.map((r) => r.rv),
     events: evs,
     activeAccess: acc[0] ?? null,
+    conversationId: conv[0]?.id ?? null,
   };
 }
 
@@ -88,7 +92,16 @@ export async function listBySeller(db: Db, sellerId: string) {
     .from(milestones)
     .where(and(inArray(milestones.agreementId, rows.map((r) => r.id)), eq(milestones.kind, "BALANCE")));
   const byId = new Map(balances.map((b) => [b.agreementId, b.status]));
-  return rows.map((a) => ({ agreement: a, balanceStatus: byId.get(a.id) ?? "WAITING_DELIVERY" }));
+  const convs = await db
+    .select({ id: conversations.id, agreementId: conversations.agreementId })
+    .from(conversations)
+    .where(inArray(conversations.agreementId, rows.map((r) => r.id)));
+  const convBy = new Map(convs.map((c) => [c.agreementId, c.id]));
+  return rows.map((a) => ({
+    agreement: a,
+    balanceStatus: byId.get(a.id) ?? "WAITING_DELIVERY",
+    conversationId: convBy.get(a.id) ?? null,
+  }));
 }
 
 export async function nextCounter(db: Db, name: string): Promise<number> {

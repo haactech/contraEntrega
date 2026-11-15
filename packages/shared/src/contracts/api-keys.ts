@@ -28,5 +28,8 @@ export const CreateApiKeyResponseSchema = z.object({
 });
 export type CreateApiKeyResponse = z.infer<typeof CreateApiKeyResponseSchema>;
 
+/** `DELETE /api/api-keys/:id` (revoke) answers 204 with no body: there is no response schema. */
+export const REVOKE_API_KEY_STATUS = 204;
+
 export const ListApiKeysResponseSchema = z.object({ keys: z.array(ApiKeyViewSchema) });
 export type ListApiKeysResponse = z.infer<typeof ListApiKeysResponseSchema>;

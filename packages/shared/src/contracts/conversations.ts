@@ -94,7 +94,9 @@ export const FeedMessageSchema = z.object({
   text: z.string(),
   /** Embedded when kind = PROPOSAL. */
   proposal: ProposalViewSchema.nullable(),
-  /** Set only for ASSISTANT messages. */
+  /** Deterministic server notice (e.g. «No pude procesar tu mensaje…»): authorType stays ASSISTANT, `assistant` is null. */
+  system: z.boolean(),
+  /** Set only for AI ASSISTANT messages (null for `system` ones). */
   assistant: AssistantInfoSchema.nullable(),
 });
 export type FeedMessage = z.infer<typeof FeedMessageSchema>;

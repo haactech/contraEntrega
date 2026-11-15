@@ -57,6 +57,14 @@ describe("negociación en la sala: propuesta -> acuerdo -> contrapropuesta -> re
     const created = seller1.feed.find((f) => f.type === "event" && f.eventType === "AGREEMENT_CREATED");
     expect(created && created.type === "event" ? created.payload.via : null).toBe("chat");
     expect(await roomOf(cookie, agreementId)).toBe(room);
+    // el hash de la propuesta confirmada es el del acuerdo sellado (lo que el comprador envía al aceptar)
+    const sellerAgreement = seller1.agreement && "shareUrl" in seller1.agreement ? seller1.agreement : null;
+    expect(sellerAgreement?.conversationId).toBe(room);
+    expect(seller1.activeProposal?.termsSha256).toBe(sellerAgreement?.agreement.termsSha256);
+    const viaGet = (await (await call(`/api/agreements/${agreementId}`, { cookie })).json()) as { conversationId: string | null };
+    expect(viaGet.conversationId).toBe(room);
+    const summaries = (await (await call("/api/agreements", { cookie })).json()) as { agreements: { id: string; conversationId: string | null }[] };
+    expect(summaries.agreements.find((a) => a.id === agreementId)?.conversationId).toBe(room);
 
     // confirmar de nuevo (doble clic) -> 409
     expect((await confirm(cookie, room, v1.id)).status).toBe(409);

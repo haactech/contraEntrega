@@ -27,8 +27,12 @@ const guard = (agreementId: string, writeId: string) =>
 export const formatCode = (n: number): string => `TR-${String(n).padStart(4, "0")}`;
 
 export async function listAgreements(db: Db, sellerId: string) {
+  // Pre-v0.3 agreements get their room lazily (idempotent).
+  await db.run(sql`INSERT OR IGNORE INTO conversations (id, seller_id, agreement_id, created_at, updated_at, version)
+    SELECT lower(hex(randomblob(16))), a.seller_id, a.id, a.created_at, a.updated_at, 1
+    FROM agreements a WHERE a.seller_id = ${sellerId} AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.agreement_id = a.id)`);
   const rows = await listBySeller(db, sellerId);
-  return { agreements: rows.map((r) => sellerSummary(r.agreement, r.balanceStatus)) };
+  return { agreements: rows.map((r) => sellerSummary(r.agreement, r.balanceStatus, r.conversationId)) };
 }
 
 /** Loads a bundle owned by `sellerId`; 404 (not 403) when it belongs to someone else. */

@@ -48,7 +48,7 @@ describe("conversation contracts", () => {
     expect(ProposalViewSchema.parse(proposal).version).toBe(2);
     const msg = {
       type: "message", id: "m1", seq: 1, occurredAt: iso, authorType: "ASSISTANT", authorName: "Trato",
-      kind: "PROPOSAL", text: "Propuesta", proposal, assistant: { provider: "mock", model: "mock-1" },
+      kind: "PROPOSAL", text: "Propuesta", proposal, system: false, assistant: { provider: "mock", model: "mock-1" },
     };
     const ev = { type: "event", id: "e1", seq: 1, occurredAt: iso, eventType: "TERMS_REVISED", actorType: "SELLER", payload: { via: "chat" } };
     expect(FeedItemSchema.parse(msg).type).toBe("message");
@@ -56,7 +56,7 @@ describe("conversation contracts", () => {
     expect(FeedItemSchema.safeParse({ ...msg, kind: "OTHER" }).success).toBe(false);
   });
   it("orders feed by occurredAt, messages before events, then seq", () => {
-    const m = (seq: number, t: string): FeedItem => ({ type: "message", id: `m${seq}`, seq, occurredAt: t, authorType: "SELLER", authorName: "x", kind: "TEXT", text: "", proposal: null, assistant: null });
+    const m = (seq: number, t: string): FeedItem => ({ type: "message", id: `m${seq}`, seq, occurredAt: t, authorType: "SELLER", authorName: "x", kind: "TEXT", text: "", proposal: null, system: false, assistant: null });
     const e = (seq: number, t: string): FeedItem => ({ type: "event", id: `e${seq}`, seq, occurredAt: t, eventType: "AGREEMENT_CREATED", actorType: "SYSTEM", payload: {} });
     const sorted = [e(1, iso), m(2, iso), m(1, "2026-11-14T17:00:00.000Z"), m(3, iso)].sort(compareFeedItems);
     expect(sorted.map((x) => x.id)).toEqual(["m1", "m2", "m3", "e1"]);

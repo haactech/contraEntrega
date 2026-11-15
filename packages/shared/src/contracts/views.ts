@@ -39,6 +39,8 @@ export const AgreementSummarySchema = z.object({
   totalCents: CentsSchema,
   status: AgreementStatusSchema,
   dueDate: DateOnlySchema.nullable(),
+  /** Room of this agreement (every agreement has one; created lazily for pre-v0.3 data). */
+  conversationId: z.string().nullable(),
   nextAction: SellerNextActionSchema,
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,
@@ -144,6 +146,8 @@ export const SellerAgreementViewSchema = z.object({
   events: z.array(EventViewSchema),
   shareUrl: z.string().nullable(),
   whatsappUrl: z.string().nullable(),
+  /** Room of this agreement; null only for rows that have not been backfilled yet. */
+  conversationId: z.string().nullable(),
   nextAction: SellerNextActionSchema,
 });
 export type SellerAgreementView = z.infer<typeof SellerAgreementViewSchema>;

@@ -158,7 +158,11 @@ function states(b: AgreementBundle) {
   } as const;
 }
 
-export function sellerSummary(a: AgreementRow, balanceStatus: MilestoneRow["status"]): AgreementSummary {
+export function sellerSummary(
+  a: AgreementRow,
+  balanceStatus: MilestoneRow["status"],
+  conversationId: string | null = null,
+): AgreementSummary {
   return {
     id: a.id,
     code: a.code,
@@ -167,6 +171,7 @@ export function sellerSummary(a: AgreementRow, balanceStatus: MilestoneRow["stat
     totalCents: a.totalCents,
     status: a.status,
     dueDate: a.dueDate,
+    conversationId,
     nextAction: computeSellerNextAction({
       agreementStatus: a.status,
       advanceStatus: "PENDING_ACCEPTANCE",
@@ -206,6 +211,7 @@ export async function buildSellerView(
     events: eventViews(b.events, false),
     shareUrl,
     whatsappUrl: shareUrl ? whatsappLink(b.agreement, shareUrl) : null,
+    conversationId: b.conversationId,
     nextAction: computeSellerNextAction(states(b)),
   };
 }
