@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
+  type ActionVia,
   buildTermsSnapshot,
   canShare,
   canonicalJson,
@@ -10,6 +11,7 @@ import {
   splitTotal,
 } from "@trato/shared";
 import { rawStmt, stmt, type Db } from "../db/client";
+import { GUARD_SQL, claimStmt } from "../payments/common";
 import { agreements, buyerAccess, milestones } from "../db/schema";
 import type { AppEnv } from "../env";
 import { decryptText, encryptText, randomToken } from "../lib/crypto";
@@ -237,3 +239,119 @@ async function respond(env: AppEnv, b: AgreementBundle, token: string, now: numb
   };
 }
 
+
+const ACTIVE_PR_EXISTS_SQL = `EXISTS (SELECT 1 FROM payment_requests pr JOIN milestones m ON m.id = pr.milestone_id
+  WHERE m.agreement_id = agreements.id AND pr.status IN ('CREATING','AWAITING_PAYMENT','CREATION_UNKNOWN'))`;
+
+/**
+ * Spec v0.3 §7: revise the terms before acceptance (DRAFT | SHARED only). `terms_version++`, the
+ * terms are re-sealed (new `terms_sha256`, so an acceptance of the old hash gets TERMS_MISMATCH),
+ * milestone amounts follow, and `TERMS_REVISED` is appended; all in one guarded batch.
+ *
+ * Active payment request: in DRAFT/SHARED the advance is still PENDING_ACCEPTANCE, so none can
+ * exist (they need an accepted agreement). If one ever did, we reject with 409 instead of
+ * abandoning it: a request already at the provider could still be paid with the old amount, and
+ * abandoning it would risk losing track of real money.
+ */
+export async function reviseTerms(
+  db: Db,
+  env: AppEnv,
+  sellerId: string,
+  agreementId: string,
+  input: CreateAgreementData,
+  now: number,
+  opts: { via?: ActionVia | undefined } = {},
+): Promise<SellerAgreementView> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const b = await loadOwned(db, sellerId, agreementId);
+    if (b.agreement.status !== "DRAFT" && b.agreement.status !== "SHARED") {
+      throw invalidState("Las condiciones ya no se pueden cambiar: el comprador ya las aceptó.");
+    }
+    if (b.paymentRequests.some((p) => ["CREATING", "AWAITING_PAYMENT", "CREATION_UNKNOWN"].includes(p.status))) {
+      throw invalidState("Hay una solicitud de pago en curso; no se pueden cambiar las condiciones.");
+    }
+    const split = splitTotal(input.totalCents, input.advanceCents);
+    const termsVersion = b.agreement.termsVersion + 1;
+    const snapshot = buildTermsSnapshot({
+      code: b.agreement.code,
+      title: input.title,
+      description: input.description,
+      acceptanceCriteria: input.acceptanceCriteria,
+      buyerName: input.buyerName,
+      dueDate: input.dueDate ?? null,
+      totalCents: split.totalCents,
+      advanceCents: split.advanceCents,
+      sellerDisplayName: b.seller.displayName,
+      payeeAlias: b.account.alias,
+      payeeLast4: b.account.clabeLast4,
+      termsVersion,
+    });
+    const termsJson = canonicalJson(snapshot);
+    const termsSha256 = await sha256Hex(termsJson);
+    const writeId = crypto.randomUUID();
+
+    const results = await batchWithSeqRetry(() =>
+      env.DB.batch([
+        claimStmt(
+          env.DB,
+          agreementId,
+          writeId,
+          now,
+          `version = ? AND status IN ('DRAFT','SHARED') AND NOT ${ACTIVE_PR_EXISTS_SQL}`,
+          b.agreement.version,
+        ),
+        stmt(
+          env.DB,
+          db
+            .update(agreements)
+            .set({
+              title: snapshot.title,
+              description: snapshot.description,
+              acceptanceCriteria: snapshot.acceptanceCriteria,
+              buyerName: snapshot.buyerName,
+              buyerPhone: input.buyerPhone ?? b.agreement.buyerPhone,
+              dueDate: snapshot.dueDate,
+              totalCents: split.totalCents,
+              termsJson,
+              termsSha256,
+              termsVersion,
+            })
+            .where(and(eq(agreements.id, agreementId), guard(agreementId, writeId))),
+        ),
+        rawStmt(
+          env.DB,
+          `UPDATE milestones SET amount_cents = ? WHERE agreement_id = ? AND kind = 'ADVANCE' AND status = 'PENDING_ACCEPTANCE' AND ${GUARD_SQL}`,
+          split.advanceCents,
+          agreementId,
+          agreementId,
+          writeId,
+        ),
+        rawStmt(
+          env.DB,
+          `UPDATE milestones SET amount_cents = ? WHERE agreement_id = ? AND kind = 'BALANCE' AND status = 'WAITING_DELIVERY' AND ${GUARD_SQL}`,
+          split.balanceCents,
+          agreementId,
+          agreementId,
+          writeId,
+        ),
+        ...appendEventStatements(env.DB, {
+          agreementId,
+          type: "TERMS_REVISED",
+          actorType: "SELLER",
+          actorRef: sellerId,
+          payload: {
+            termsVersion,
+            termsSha256,
+            totalCents: split.totalCents,
+            advanceCents: split.advanceCents,
+            ...(opts.via ? { via: opts.via } : {}),
+          },
+          now,
+          guardWriteId: writeId,
+        }),
+      ]),
+    );
+    if (results[0]?.meta.changes === 1) return getSellerView(db, env, sellerId, agreementId, now);
+  }
+  throw invalidState("El trato cambió mientras se procesaba la solicitud. Inténtalo de nuevo.");
+}
