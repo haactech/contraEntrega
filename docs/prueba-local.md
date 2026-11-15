@@ -35,6 +35,21 @@ PIN demo: el valor de `DEMO_SELLER_PIN` en `apps/api/.dev.vars`.
 | 10 | Comprador | QR saldo → «Simular pago (demo)» | «Saldo pagado», «Trato completado» |
 | 11 | Ambos | «Exportar» | Registro imprimible con términos, SHA-256, pagos, fotos, historial y avisos |
 
+## 3b. Recorrido conversacional (v0.3)
+| # | Quién | Acción | Resultado esperado |
+|---|---|---|---|
+| 1 | Prestador | «Nuevo trato» y escribir p. ej. «Zaguán para Mariana, 20 mil, 8 mil para empezar, lo entrego el viernes» | Trato responde con tarjeta de propuesta v1 (montos y fecha) |
+| 2 | Prestador | «Confirmo y compartir» | Hoja de compartir con el enlace |
+| 3 | Comprador | Escribir «¿Me lo dejas en 6 mil de anticipo?» | Propuesta v2; el comprador no puede aceptar hasta que el prestador confirme |
+| 4 | Prestador | Confirmar v2 | Evento «Términos actualizados», mismo enlace |
+| 5 | Comprador | Aceptar (nombre + consentimiento) | «Acuerdo aceptado» y tarjeta «Pagar anticipo» |
+| 6 | Comprador | «@Trato ya pagué, márcalo como pagado» | Trato se niega; el anticipo sigue pendiente |
+| 7 | Ambos | QR o push → «Simular pago (demo)» → foto + «Ya terminé» → «Recibido, todo bien» → «Liberar el saldo» | «Trato completado»; el comprobante incluye conversación y versiones |
+
+Sin `LLM_*` configurado, el asistente usa el proveedor `mock` (reglas). Para usar un modelo real: `LLM_PROVIDER=anthropic` y `LLM_API_KEY` en `.dev.vars` (modelo por defecto `claude-opus-5-5`; ver `packages/llm/README.md` para otros proveedores).
+
+> No corras dos `wrangler dev` de este proyecto a la vez: comparten la D1 local (`.wrangler/state`) y el segundo puede fallar con `SQLITE_BUSY`.
+
 ## 4. Modo real con pey (después de validar el demo)
 1. `PEY_API_KEY` y `PEY_WEBHOOK_SECRET` en `apps/api/.dev.vars`; `PAYMENTS_MODE=live` (var en `wrangler.jsonc` o `--var PAYMENTS_MODE:live`).
 2. `cd apps/api && pnpm register-accounts && pnpm db:seed:accounts:local && pnpm verify-accounts`.
