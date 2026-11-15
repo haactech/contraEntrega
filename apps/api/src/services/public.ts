@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
+  type ActionVia,
   onAccepted,
   type AcceptAgreementRequest,
   type BuyerAgreementView,
@@ -33,6 +34,7 @@ export async function acceptAgreement(
   agreementId: string,
   input: AcceptAgreementRequest,
   now: number,
+  opts: { via?: ActionVia | undefined } = {},
 ): Promise<BuyerAgreementView> {
   const b = await loadBundle(db, agreementId);
   if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
@@ -73,7 +75,7 @@ export async function acceptAgreement(
         type: "TERMS_ACCEPTED",
         actorType: "BUYER",
         actorRef: input.buyerName,
-        payload: { termsVersion: b.agreement.termsVersion, termsSha256: b.agreement.termsSha256, buyerName: input.buyerName },
+        payload: { termsVersion: b.agreement.termsVersion, termsSha256: b.agreement.termsSha256, buyerName: input.buyerName, ...(opts.via ? { via: opts.via } : {}) },
         now,
         guardWriteId: writeId,
       }),

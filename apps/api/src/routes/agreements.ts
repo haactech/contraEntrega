@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { CreateAgreementInputSchema, EVIDENCE_LIMITS, RequestReviewRequestSchema, ShareAgreementRequestSchema } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
+import { viaOf } from "../lib/via";
 import { parseJson } from "../lib/validate";
 import { requireSeller } from "../middleware/session";
 import { AppError } from "../lib/errors";
@@ -18,7 +19,7 @@ agreementRoutes.get("/", async (c) => c.json(await listAgreements(createDb(c.env
 
 agreementRoutes.post("/", async (c) => {
   const input = await parseJson(c, CreateAgreementInputSchema);
-  const view = await createAgreement(createDb(c.env.DB), c.env, sellerId(c), input, Date.now());
+  const view = await createAgreement(createDb(c.env.DB), c.env, sellerId(c), input, Date.now(), { via: viaOf(c) });
   return c.json(view, 201);
 });
 
@@ -35,6 +36,7 @@ agreementRoutes.post("/:id/share", async (c) => {
     c.req.param("id"),
     body.regenerate === true,
     Date.now(),
+    { via: viaOf(c) },
   );
   return c.json(res);
 });

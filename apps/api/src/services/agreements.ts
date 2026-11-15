@@ -49,6 +49,7 @@ export async function createAgreement(
   sellerId: string,
   input: CreateAgreementData,
   now: number,
+  opts: { conversationId?: string | undefined; via?: ActionVia | undefined } = {},
 ): Promise<SellerAgreementView> {
   const seller = await findSeller(db, sellerId);
   if (!seller) throw notFound("No encontramos al prestador.");
@@ -121,10 +122,41 @@ export async function createAgreement(
         type: "AGREEMENT_CREATED",
         actorType: "SELLER",
         actorRef: sellerId,
-        payload: { code, totalCents: split.totalCents, advanceCents: split.advanceCents, balanceCents: split.balanceCents },
+        payload: {
+          code,
+          totalCents: split.totalCents,
+          advanceCents: split.advanceCents,
+          balanceCents: split.balanceCents,
+          ...(opts.via ? { via: opts.via } : {}),
+        },
         now,
         guardWriteId: createWriteId,
       }),
+      // Every agreement has a conversation: link the room it came from, or open a new one.
+      opts.conversationId
+        ? rawStmt(
+            env.DB,
+            `UPDATE conversations SET agreement_id = ?, version = version + 1, updated_at = ?
+             WHERE id = ? AND seller_id = ? AND agreement_id IS NULL AND ${GUARD_SQL}`,
+            id,
+            now,
+            opts.conversationId,
+            sellerId,
+            id,
+            createWriteId,
+          )
+        : rawStmt(
+            env.DB,
+            `INSERT INTO conversations (id, seller_id, agreement_id, created_at, updated_at, version)
+             SELECT ?, ?, ?, ?, ?, 1 WHERE ${GUARD_SQL}`,
+            crypto.randomUUID(),
+            sellerId,
+            id,
+            now,
+            now,
+            id,
+            createWriteId,
+          ),
     ]),
   );
   return getSellerView(db, env, sellerId, id, now);
@@ -137,6 +169,7 @@ export async function shareAgreement(
   agreementId: string,
   regenerate: boolean,
   now: number,
+  opts: { via?: ActionVia | undefined } = {},
 ): Promise<ShareAgreementResponse> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
@@ -218,7 +251,10 @@ export async function shareAgreement(
           type: existing ? "LINK_REGENERATED" : "AGREEMENT_SHARED",
           actorType: "SELLER",
           actorRef: sellerId,
-          payload: existing ? {} : { termsSha256: sealed?.termsSha256 ?? b.agreement.termsSha256 },
+          payload: {
+            ...(existing ? {} : { termsSha256: sealed?.termsSha256 ?? b.agreement.termsSha256 }),
+            ...(opts.via ? { via: opts.via } : {}),
+          },
           now,
           guardWriteId: writeId,
         }),

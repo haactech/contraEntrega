@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { AcceptAgreementRequestSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
+import { viaOf } from "../lib/via";
 import { parseJson } from "../lib/validate";
 import { publicKey, rateLimit } from "../middleware/ratelimit";
 import { forbidOwnerSeller, resolveToken } from "../middleware/session";
@@ -12,6 +13,8 @@ import { loadBundle } from "../repos/agreements";
 import { exportResponse, renderExport } from "../services/export";
 import { notFound } from "../lib/errors";
 import { submitReview } from "../services/review";
+import { respondWithView } from "./conversations";
+import { conversationForAgreement } from "../services/conversations";
 import { acceptAgreement, agreementVersion, etagFor, getBuyerView } from "../services/public";
 
 export const publicRoutes = new Hono<HonoEnv>();
@@ -47,7 +50,7 @@ publicRoutes.post(
   forbidOwnerSeller,
   async (c) => {
     const input = await parseJson(c, AcceptAgreementRequestSchema);
-    const view = await acceptAgreement(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now());
+    const view = await acceptAgreement(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now(), { via: viaOf(c) });
     return c.json(view);
   },
 );
@@ -87,7 +90,7 @@ publicRoutes.post(
   forbidOwnerSeller,
   async (c) => {
     const input = await parseJson(c, ReviewRequestSchema);
-    const view = await submitReview(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now());
+    const view = await submitReview(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now(), { via: viaOf(c) });
     c.header("Cache-Control", "no-store");
     return c.json(view);
   },
@@ -97,4 +100,9 @@ publicRoutes.get("/tratos/:token/export", rateLimit("RL_PUBLIC_READ", publicKey(
   const b = await loadBundle(createDb(c.env.DB), c.get("access").agreementId);
   if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
   return exportResponse(await renderExport(c.env, b, "buyer", Date.now()));
+});
+
+publicRoutes.get("/tratos/:token/conversation", rateLimit("RL_PUBLIC_READ", publicKey("c")), async (c) => {
+  const conv = await conversationForAgreement(c.env, createDb(c.env.DB), c.get("access").agreementId, Date.now());
+  return respondWithView(c, conv.id, "BUYER", { "Referrer-Policy": "no-referrer" });
 });

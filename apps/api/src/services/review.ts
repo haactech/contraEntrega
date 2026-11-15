@@ -1,4 +1,4 @@
-import { onReviewed, type BuyerAgreementView, type ReviewRequest } from "@trato/shared";
+import { onReviewed, type ActionVia, type BuyerAgreementView, type ReviewRequest } from "@trato/shared";
 import { rawStmt, type Db } from "../db/client";
 import type { AppEnv } from "../env";
 import { AppError, invalidState, notFound } from "../lib/errors";
@@ -16,6 +16,7 @@ export async function submitReview(
   agreementId: string,
   input: ReviewRequest,
   now: number,
+  opts: { via?: ActionVia | undefined } = {},
 ): Promise<BuyerAgreementView> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const b = await loadBundle(db, agreementId);
@@ -77,6 +78,7 @@ export async function submitReview(
             deliveryRound: balance.deliveryRound,
             buyerName: input.buyerName,
             ...(comment ? { comment } : {}),
+            ...(opts.via ? { via: opts.via } : {}),
           },
           now,
           guardWriteId: writeId,
