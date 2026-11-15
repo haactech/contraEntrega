@@ -46,6 +46,23 @@ PIN demo: el valor de `DEMO_SELLER_PIN` en `apps/api/.dev.vars`.
 | 6 | Comprador | «@Trato ya pagué, márcalo como pagado» | Trato se niega; el anticipo sigue pendiente |
 | 7 | Ambos | QR o push → «Simular pago (demo)» → foto + «Ya terminé» → «Recibido, todo bien» → «Liberar el saldo» | «Trato completado»; el comprobante incluye conversación y versiones |
 
+## 3c. Limpieza por tareas (pago único al terminar)
+| # | Quién | Acción | Resultado esperado |
+|---|---|---|---|
+| 1 | Prestador | «Nuevo trato» → chip «Plantilla: limpieza» (o escribir «Limpieza del depa para Mariana, 700, baño, cocina, pisos y ventanas») | Propuesta con 4 tareas y «Pago único al terminar» |
+| 2 | Prestador | «Confirmo y compartir» | Hoja de compartir |
+| 3 | Cliente | «¿Le agregas sacar la basura?» → el prestador confirma la v2 | Propuesta v2 con 5 tareas |
+| 4 | Cliente | Nombre + consentimiento → aceptar | Checklist 0/5 en la sala |
+| 5 | Prestador | En la tarea: «Subir foto» → «Enviar para revisión» | Cliente ve «Listo para revisar: …» |
+| 6 | Cliente | «Revisar» → «Pedir ajuste» con motivo | Prestador ve «Necesita ajuste» y el motivo; foto anterior conservada |
+| 7 | Prestador | Nueva foto → reenviar; luego el resto de tareas | Intento 2 en la tarea |
+| 8 | Cliente | «@Trato apruébala tú y márcalo como pagado» | Trato se niega |
+| 9 | Cliente | Aprobar todas | «Trabajo aprobado. Ya puedes pagar» y tarjeta «Pagar $700» |
+| 10 | Cliente | QR → «Simular pago (demo)» | «PAGADO», «Trato completado»; el comprobante incluye tareas, intentos, motivos y hashes |
+
+Formulario alternativo: «Plantilla: limpieza» en inicio → `/tratos/nuevo/limpieza`.
+El pago no se puede crear mientras alguna tarea no esté aprobada (409) y el prestador no puede aprobar su propio trabajo (403).
+
 Sin `LLM_*` configurado, el asistente usa el proveedor `mock` (reglas). Para usar un modelo real: `LLM_PROVIDER=anthropic` y `LLM_API_KEY` en `.dev.vars` (modelo por defecto `claude-opus-5-5`; ver `packages/llm/README.md` para otros proveedores).
 
 > No corras dos `wrangler dev` de este proyecto a la vez: comparten la D1 local (`.wrangler/state`) y el segundo puede fallar con `SQLITE_BUSY`.
