@@ -10,7 +10,10 @@ import {
   buildConcept,
   buildPeyMetadata,
   formatNumRef,
+  PeyRegisterBankAccountRequestSchema,
+  PeyRegisterBankAccountResponseSchema,
   getExternalMetadata,
+  redactPeyWebhookPayload,
 } from "../src";
 
 const qrEvent = {
@@ -112,5 +115,27 @@ describe("helpers", () => {
   it("formatNumRef", () => {
     expect(formatNumRef(7)).toBe("0000007");
     expect(() => formatNumRef(10_000_000)).toThrow();
+  });
+});
+
+describe("bank accounts", () => {
+  it("validates register request/response", () => {
+    expect(PeyRegisterBankAccountRequestSchema.safeParse({ alias: "a", name: "n", clabe: "012180001234567899", entity: "PERSON" }).success).toBe(true);
+    expect(PeyRegisterBankAccountRequestSchema.safeParse({ alias: "a", name: "n", clabe: "123", entity: "PERSON" }).success).toBe(false);
+    expect(PeyRegisterBankAccountResponseSchema.parse({ id: "x", codiStatus: "PENDING" }).codiStatus).toBe("PENDING");
+  });
+  it("parses bank.account.updated and redacts", () => {
+    const ev = PeyWebhookEventSchema.parse({
+      type: "bank.account.updated", bankAccountId: "b1", codiStatus: "ACTIVE",
+      clabe: "012180001234567899", name: "Juan", entity: "PERSON", ownerType: "API_KEY", ownerId: "o", taxId: "XAXX010101000",
+    });
+    const red = redactPeyWebhookPayload(ev);
+    expect(red).toEqual({ type: "bank.account.updated", bankAccountId: "b1", codiStatus: "ACTIVE", entity: "PERSON", ownerType: "API_KEY", ownerId: "o" });
+    expect(getExternalMetadata(ev)).toEqual({});
+  });
+  it("redacts metadata.clabe from payment events", () => {
+    const red = redactPeyWebhookPayload(PeyWebhookEventSchema.parse(qrEvent));
+    expect(JSON.stringify(red)).not.toContain("000000000000000000");
+    expect((red["metadata"] as Record<string, unknown>)["trackingKey"]).toBe("0192191042");
   });
 });

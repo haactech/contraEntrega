@@ -84,6 +84,24 @@ export const PeyBankAccountSchema = z
   .passthrough();
 export type PeyBankAccount = z.infer<typeof PeyBankAccountSchema>;
 
+export const PeyCodiStatusSchema = z.enum(PEY_CODI_STATUSES);
+export type PeyCodiStatus = z.infer<typeof PeyCodiStatusSchema>;
+
+// ---- POST /bank-account ---------------------------------------------------
+
+export const PeyRegisterBankAccountRequestSchema = z.object({
+  alias: z.string().min(1).max(255),
+  name: z.string().min(1).max(255),
+  clabe: z.string().regex(/^[0-9]{18}$/),
+  entity: z.enum(["BUSINESS", "PERSON"]),
+});
+export type PeyRegisterBankAccountRequest = z.infer<typeof PeyRegisterBankAccountRequestSchema>;
+
+export const PeyRegisterBankAccountResponseSchema = z
+  .object({ id: z.string().min(1), codiStatus: PeyCodiStatusSchema })
+  .passthrough();
+export type PeyRegisterBankAccountResponse = z.infer<typeof PeyRegisterBankAccountResponseSchema>;
+
 // ---- Transactions ---------------------------------------------------------
 
 export const PeyAmountBreakdownSchema = z
@@ -181,15 +199,44 @@ export const PeyPnPaymentReceivedSchema = z
   .passthrough();
 export type PeyPnPaymentReceived = z.infer<typeof PeyPnPaymentReceivedSchema>;
 
+export const PeyBankAccountUpdatedSchema = z
+  .object({
+    type: z.literal("bank.account.updated"),
+    bankAccountId: z.string().min(1),
+    codiStatus: PeyCodiStatusSchema,
+    clabe: z.string().optional(),
+    name: z.string().optional(),
+    entity: z.string().optional(),
+    ownerType: z.string().optional(),
+    ownerId: z.string().optional(),
+    taxId: z.string().optional(),
+  })
+  .passthrough();
+export type PeyBankAccountUpdated = z.infer<typeof PeyBankAccountUpdatedSchema>;
+
 export const PeyWebhookEventSchema = z.discriminatedUnion("type", [
   PeyQrPaymentReceivedSchema,
   PeyPnPaymentReceivedSchema,
+  PeyBankAccountUpdatedSchema,
 ]);
 export type PeyWebhookEvent = z.infer<typeof PeyWebhookEventSchema>;
 
 /** Safe accessor for the external metadata echoed by pey (strings). */
-export function getExternalMetadata(event: { metadata?: PeyTransactionMetadata | undefined }): Record<string, string> {
+export function getExternalMetadata(event: PeyWebhookEvent): Record<string, string> {
+  if (event.type === "bank.account.updated") return {};
   return event.metadata?.externalMetadata ?? {};
+}
+
+/** Copy of the webhook payload safe to persist: drops clabe, name, taxId and metadata.clabe. */
+export function redactPeyWebhookPayload(event: PeyWebhookEvent): Record<string, unknown> {
+  const { clabe: _c, name: _n, taxId: _t, ...rest } = event as Record<string, unknown>;
+  const out: Record<string, unknown> = rest;
+  const md = out["metadata"];
+  if (md && typeof md === "object" && !Array.isArray(md)) {
+    const { clabe: _mc, ...mdRest } = md as Record<string, unknown>;
+    out["metadata"] = mdRest;
+  }
+  return out;
 }
 
 // ---- Helpers --------------------------------------------------------------
