@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
-import { Bot, ChevronRight, LogOut, Plus, UserRound } from "lucide-react";
+import { Bot, ChevronRight, LogOut, Plus, Sparkles, UserRound } from "lucide-react";
 import {
   APP_ROUTES,
   formatMxn,
@@ -184,6 +184,14 @@ type ListState =
   | { kind: "conversations"; items: ConversationSummary[] }
   | { kind: "agreements"; items: AgreementSummary[] };
 
+function progressChip(p: { approved: number; total: number } | null | undefined) {
+  return p && p.total > 0 ? (
+    <Badge tone={p.approved === p.total ? "success" : "neutral"}>
+      {p.approved}/{p.total} tareas
+    </Badge>
+  ) : null;
+}
+
 function conversationChip(c: ConversationSummary): { label: string; tone: Tone } {
   if (c.nextAction) return chipFor({ nextAction: c.nextAction });
   if (c.hasOpenProposal) return { label: "Propuesta por confirmar", tone: "warn" };
@@ -249,6 +257,12 @@ function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: 
         <Button size="lg" block onClick={() => navigate(APP_ROUTES.newAgreement)}>
           <Plus className="size-5" aria-hidden /> Nuevo trato
         </Button>
+        <Link
+          to={APP_ROUTES.newCleaning}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-brand-700 bg-white px-4 font-bold text-brand-800 hover:bg-brand-50"
+        >
+          <Sparkles className="size-5" aria-hidden /> Plantilla: limpieza
+        </Link>
         <p className="text-center text-sm">
           <Link to={APP_ROUTES.newAgreementForm} className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline">
             Usar formulario
@@ -282,6 +296,7 @@ function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: 
                     <span className="flex items-center gap-2">
                       {c.agreementCode && <span className="text-xs font-bold text-slate-600">{c.agreementCode}</span>}
                       <Badge tone={chip.tone}>{chip.label}</Badge>
+                      {progressChip((c as { taskProgress?: { approved: number; total: number } | null }).taskProgress)}
                     </span>
                     <span className="mt-0.5 block truncate font-bold">{c.title ?? "Trato nuevo"}</span>
                     <span className="block truncate text-sm text-slate-700">
@@ -308,6 +323,7 @@ function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: 
                     <span className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-600">{a.code}</span>
                       <Badge tone={chip.tone}>{chip.label}</Badge>
+                      {a.serviceType === "CLEANING" && progressChip(a.taskProgress)}
                     </span>
                     <span className="mt-0.5 block truncate font-bold">{a.title}</span>
                     <span className="block truncate text-sm text-slate-700">

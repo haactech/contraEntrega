@@ -11,6 +11,7 @@ import { AGENTS_ROUTE } from "@/lib/routes";
 const HomeRoute = lazy(() => import("@/routes/seller/home"));
 const NewConversationRoute = lazy(() => import("@/routes/seller/new-conversation"));
 const NewAgreementRoute = lazy(() => import("@/routes/seller/new-agreement"));
+const NewCleaningRoute = lazy(() => import("@/routes/seller/new-cleaning"));
 const AgreementRoute = lazy(() => import("@/routes/seller/agreement"));
 const SellerRoomRoute = lazy(() => import("@/routes/seller/room"));
 const AgentsRoute = lazy(() => import("@/routes/seller/agents"));
@@ -46,6 +47,7 @@ export function App() {
               <Route path="/" element={<HomeRoute />} />
               <Route path="/tratos/nuevo" element={<NewConversationRoute />} />
               <Route path="/tratos/nuevo/formulario" element={<NewAgreementRoute />} />
+              <Route path="/tratos/nuevo/limpieza" element={<NewCleaningRoute />} />
               <Route path="/tratos/:id" element={<AgreementRoute />} />
               <Route path="/salas/:id" element={<SellerRoomRoute />} />
               <Route path={AGENTS_ROUTE} element={<AgentsRoute />} />

@@ -1,9 +1,10 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDown, ArrowLeft, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { ArrowDown, ArrowLeft, ChevronDown, ChevronUp, FileText, Sparkles } from "lucide-react";
 import { API_ROUTES, APP_ROUTES, EVIDENCE_LIMITS, type AllowedAction, type ConversationView } from "@trato/shared";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
+import { ROOM_TEMPLATE_EXAMPLE } from "@/lib/cleaning";
 import { uuid } from "@/lib/uuid";
 import {
   activeCards,
@@ -322,7 +323,24 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
                     </p>
                   </div>
                   {view.assistant.enabled ? (
-                    <Suggestions onPick={(t) => composer.current?.setText(t)} />
+                    <>
+                      <div className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => composer.current?.setText(ROOM_TEMPLATE_EXAMPLE)}
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border-2 border-brand-700 bg-white px-4 text-sm font-bold text-brand-800 hover:bg-brand-50"
+                        >
+                          <Sparkles className="size-4" aria-hidden /> Plantilla: limpieza
+                        </button>
+                        <p className="text-sm text-slate-700">
+                          Precarga un ejemplo con tareas.{" "}
+                          <Link to={APP_ROUTES.newCleaning} className="font-bold text-brand-800 underline">
+                            Usar el formulario de limpieza
+                          </Link>
+                        </p>
+                      </div>
+                      <Suggestions onPick={(t) => composer.current?.setText(t)} />
+                    </>
                   ) : (
                     <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
                       El asistente no está disponible ahora.{" "}
