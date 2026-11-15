@@ -9,11 +9,14 @@ import {
 import type {
   ActorType,
   AgreementStatus,
+  ConversationAuthorType,
   EventType,
+  MessageKind,
   MilestoneKind,
   MilestoneStatus,
   PaymentMethod,
   PaymentRequestStatus,
+  ProposalStatus,
   ReviewDecision,
   WebhookProcessingStatus,
 } from "@trato/shared";
@@ -216,3 +219,99 @@ export const counters = sqliteTable("counters", {
   name: text("name").primaryKey(),
   value: integer("value").notNull().default(0),
 });
+
+/* ------------------------------------------------------- v0.3 conversational */
+
+export const conversations = sqliteTable(
+  "conversations",
+  {
+    id: text("id").primaryKey(),
+    sellerId: text("seller_id")
+      .notNull()
+      .references(() => sellers.id),
+    /** Linked agreement; null while the room only has a negotiation. Plain column (no FK) so the link can be claimed atomically. */
+    agreementId: text("agreement_id").unique(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    /** Bumped on every message / proposal / assistant lock change (ETag). */
+    version: integer("version").notNull().default(0),
+    /** Assistant lock: a call is in flight while this is in the future. Expired = crashed, can be retaken. */
+    assistantLockUntil: integer("assistant_lock_until"),
+    /** Highest message seq the in-flight assistant run has taken into account. */
+    assistantSnapshotSeq: integer("assistant_snapshot_seq").notNull().default(0),
+    /** Highest seq of a message that asked for an assistant turn (coalescing: debounce). */
+    assistantPendingSeq: integer("assistant_pending_seq").notNull().default(0),
+  },
+  (t) => [index("conversations_seller_updated_idx").on(t.sellerId, t.updatedAt)],
+);
+
+/** Append-only. */
+export const messages = sqliteTable(
+  "messages",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id),
+    seq: integer("seq").notNull(),
+    authorType: text("author_type").$type<ConversationAuthorType>().notNull(),
+    authorName: text("author_name").notNull(),
+    kind: text("kind").$type<MessageKind>().notNull(),
+    bodyText: text("body_text").notNull(),
+    proposalId: text("proposal_id"),
+    llmCallId: text("llm_call_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("messages_conversation_seq_uq").on(t.conversationId, t.seq)],
+);
+
+export const proposals = sqliteTable(
+  "proposals",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id),
+    version: integer("version").notNull(),
+    /** Canonical CreateAgreementInput-like terms (title, description, acceptanceCriteria, buyerName, dueDate, totalCents, advanceCents). */
+    termsJson: text("terms_json").notNull(),
+    /** sha256 of the canonical terms; replaced by the agreement's sealed hash once the seller confirms. */
+    termsSha256: text("terms_sha256").notNull(),
+    status: text("status").$type<ProposalStatus>().notNull(),
+    createdAt: integer("created_at").notNull(),
+    confirmedAt: integer("confirmed_at"),
+  },
+  (t) => [uniqueIndex("proposals_conversation_version_uq").on(t.conversationId, t.version)],
+);
+
+/** MCP keys (next stage). Only the hash is stored. */
+export const apiKeys = sqliteTable("api_keys", {
+  id: text("id").primaryKey(),
+  sellerId: text("seller_id")
+    .notNull()
+    .references(() => sellers.id),
+  label: text("label").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  createdAt: integer("created_at").notNull(),
+  lastUsedAt: integer("last_used_at"),
+  revokedAt: integer("revoked_at"),
+});
+
+/** Observability of LLM calls. Never stores prompt or reply content. */
+export const llmCalls = sqliteTable(
+  "llm_calls",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    outcome: text("outcome").notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("llm_calls_conversation_idx").on(t.conversationId, t.createdAt)],
+);
