@@ -21,6 +21,7 @@ export async function submitReview(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const b = await loadBundle(db, agreementId);
     if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
+    if (b.agreement.serviceType === "CLEANING") throw invalidState("Este trato es de limpieza: aprueba o pide ajustes tarea por tarea.");
     const balance = b.milestones.find((m) => m.kind === "BALANCE");
     if (!balance) throw new Error("El trato no tiene hito de saldo.");
     const t = onReviewed(input.decision, b.agreement, {

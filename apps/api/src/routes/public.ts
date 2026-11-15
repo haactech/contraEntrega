@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import { AcceptAgreementRequestSchema, PostMessageInputSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
+import { Hono, type Context } from "hono";
+import { AcceptAgreementRequestSchema, PostMessageInputSchema, RequestAdjustmentRequestSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { viaOf } from "../lib/via";
@@ -13,6 +13,7 @@ import { loadBundle } from "../repos/agreements";
 import { exportResponse, renderExport } from "../services/export";
 import { notFound } from "../lib/errors";
 import { submitReview } from "../services/review";
+import { reviewTask } from "../services/tasks";
 import { respondWithView } from "./conversations";
 import { conversationForAgreement, postBuyerMessage } from "../services/conversations";
 import { runInBackground } from "../assistant/tasks";
@@ -95,6 +96,33 @@ publicRoutes.post(
     const view = await submitReview(createDb(c.env.DB), c.env, c.get("access").agreementId, input, Date.now(), { via: viaOf(c) });
     c.header("Cache-Control", "no-store");
     return c.json(view);
+  },
+);
+
+/** Client decision on one task. The seller who owns the agreement is rejected (invariant 3). */
+async function decideTask(c: Context<HonoEnv>, decision: "APPROVE" | "REQUEST_ADJUSTMENT", reason?: string) {
+  const taskId = c.req.param("taskId") ?? "";
+  const view = await reviewTask(createDb(c.env.DB), c.env, c.get("access").agreementId, taskId, decision, reason, Date.now(), { via: viaOf(c) });
+  const task = view.tasks?.find((t) => t.id === taskId);
+  if (!task) throw notFound("No encontramos esa tarea.");
+  c.header("Cache-Control", "no-store");
+  return c.json(task);
+}
+
+publicRoutes.post(
+  "/tratos/:token/tasks/:taskId/approve",
+  rateLimit("RL_PUBLIC_WRITE", publicKey("w")),
+  forbidOwnerSeller,
+  async (c) => decideTask(c, "APPROVE"),
+);
+
+publicRoutes.post(
+  "/tratos/:token/tasks/:taskId/request-adjustment",
+  rateLimit("RL_PUBLIC_WRITE", publicKey("w")),
+  forbidOwnerSeller,
+  async (c) => {
+    const input = await parseJson(c, RequestAdjustmentRequestSchema);
+    return decideTask(c, "REQUEST_ADJUSTMENT", input.reason);
   },
 );
 

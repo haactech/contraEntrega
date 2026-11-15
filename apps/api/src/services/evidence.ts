@@ -56,15 +56,8 @@ export function assertDeclaredSize(contentLength: string | undefined): void {
   }
 }
 
-export async function addEvidence(
-  db: Db,
-  env: AppEnv,
-  sellerId: string,
-  agreementId: string,
-  file: File,
-  now: number,
-  opts: ActionOpts = {},
-): Promise<EvidenceView> {
+/** Shared upload pipeline: size, empty, magic bytes (declared type ignored), sha-256. */
+export async function readImage(file: File): Promise<{ buf: ArrayBuffer; kind: { mime: string; ext: string }; sha256: string }> {
   if (file.size > EVIDENCE_LIMITS.maxBytes) {
     throw new AppError("VALIDATION_ERROR", "La foto pesa más de 5 MB. Comprímela e inténtalo de nuevo.");
   }
@@ -75,10 +68,25 @@ export async function addEvidence(
   }
   const kind = sniffImage(new Uint8Array(buf, 0, Math.min(16, buf.byteLength)));
   if (!kind) throw new AppError("VALIDATION_ERROR", "Solo se aceptan fotos JPEG, PNG o WebP.");
-  const sha256 = await sha256Bytes(buf);
+  return { buf, kind, sha256: await sha256Bytes(buf) };
+}
+
+export const CLEANING_GENERIC_REJECTION = "Este trato es de limpieza: usa las tareas del checklist.";
+
+export async function addEvidence(
+  db: Db,
+  env: AppEnv,
+  sellerId: string,
+  agreementId: string,
+  file: File,
+  now: number,
+  opts: ActionOpts = {},
+): Promise<EvidenceView> {
+  const { buf, kind, sha256 } = await readImage(file);
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
+    if (b.agreement.serviceType === "CLEANING") throw invalidState(CLEANING_GENERIC_REJECTION);
     const balance = balanceOf(b);
     const round = evidenceRoundFor(snap(balance));
     const inRound = b.evidence.filter((e) => e.milestoneId === balance.id && e.deliveryRound === round).length;
@@ -164,6 +172,7 @@ export async function removeEvidence(
     const b = await loadOwned(db, sellerId, agreementId);
     const row = b.evidence.find((e) => e.id === evidenceId);
     if (!row) throw notFound("No encontramos esa foto.");
+    if (b.agreement.serviceType === "CLEANING" || row.taskId) throw invalidState(CLEANING_GENERIC_REJECTION);
     if (row.submitted) throw invalidState("Esta foto ya fue enviada a revisión y no se puede eliminar.");
 
     const writeId = crypto.randomUUID();
@@ -201,6 +210,7 @@ export async function requestReview(
 ): Promise<SellerAgreementView> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const b = await loadOwned(db, sellerId, agreementId);
+    if (b.agreement.serviceType === "CLEANING") throw invalidState(CLEANING_GENERIC_REJECTION);
     const balance = balanceOf(b);
     const unsubmitted = b.evidence.filter((e) => e.milestoneId === balance.id && !e.submitted).length;
     const t = onReviewRequested(b.agreement, snap(balance), unsubmitted);

@@ -14,6 +14,8 @@ export interface AppendEventInput {
    * When omitted the event is unconditional and `agreements.version` is incremented.
    */
   guardWriteId?: string;
+  /** Extra `WHERE` condition (raw SQL fragment, no leading AND) that must hold for the event to be written. Only with `guardWriteId`. */
+  extraWhere?: { sql: string; params: unknown[] };
 }
 
 /**
@@ -30,7 +32,7 @@ export function appendEventStatements(d1: D1Database, e: AppendEventInput): D1Pr
     d1,
     `INSERT INTO agreement_events (id, agreement_id, seq, event_type, actor_type, actor_ref, payload_json, occurred_at)
      SELECT ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM agreement_events WHERE agreement_id = ?), ?, ?, ?, ?, ?${
-       guarded ? " WHERE EXISTS (SELECT 1 FROM agreements WHERE id = ? AND write_id = ?)" : ""
+       guarded ? ` WHERE EXISTS (SELECT 1 FROM agreements WHERE id = ? AND write_id = ?)${e.extraWhere ? ` AND ${e.extraWhere.sql}` : ""}` : ""
      }`,
     id,
     e.agreementId,
@@ -40,7 +42,7 @@ export function appendEventStatements(d1: D1Database, e: AppendEventInput): D1Pr
     e.actorRef ?? null,
     payload,
     e.now,
-    ...(guarded ? [e.agreementId, e.guardWriteId] : []),
+    ...(guarded ? [e.agreementId, e.guardWriteId, ...(e.extraWhere?.params ?? [])] : []),
   );
   if (guarded) return [insert];
   return [
