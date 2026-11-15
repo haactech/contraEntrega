@@ -16,4 +16,6 @@ export interface CardCtx {
   onFocusCard: (kind: import("@/lib/conversation").DockKind) => void;
   /** Buyer: a chip asked to open a review dialog. */
   reviewRequest: { kind: "APPROVE" | "DISPUTE"; nonce: number } | null;
+  /** Cleaning: open + highlight this task in the checklist card. */
+  focusTask: { id: string; nonce: number } | null;
 }

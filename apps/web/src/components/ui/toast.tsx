@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-type ToastTone = "info" | "error" | "success";
+type ToastTone = "info" | "error" | "success" | "warn";
 interface ToastItem {
   id: number;
   message: string;
@@ -21,7 +21,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback((message: string, tone: ToastTone = "info") => {
     const id = nextId.current++;
     setItems((prev) => [...prev.slice(-2), { id, message, tone }]);
-    window.setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), 4500);
+    window.setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), tone === "info" || tone === "success" ? 6500 : 8000);
   }, []);
   const api = useMemo(() => ({ show }), [show]);
 
@@ -35,10 +35,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {items.map((t) => (
           <div
             key={t.id}
-            role={t.tone === "error" ? "alert" : "status"}
+            role={t.tone === "error" || t.tone === "warn" ? "alert" : "status"}
             className={cn(
               "pointer-events-auto w-full max-w-md rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg",
-              t.tone === "error" ? "bg-red-700" : t.tone === "success" ? "bg-brand-700" : "bg-slate-800",
+              t.tone === "error" ? "bg-red-700" : t.tone === "warn" ? "bg-amber-700" : t.tone === "success" ? "bg-brand-700" : "bg-slate-800",
             )}
           >
             {t.message}

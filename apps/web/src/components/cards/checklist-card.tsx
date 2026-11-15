@@ -16,6 +16,7 @@ export function ChecklistCard({ ctx }: { ctx: CardCtx }) {
         view={sa}
         compact
         refresh={ctx.refresh}
+        focusTask={ctx.focusTask}
         {...(sa.shareUrl && sa.whatsappUrl
           ? { onShare: () => ctx.onShare({ shareUrl: sa.shareUrl ?? "", whatsappUrl: sa.whatsappUrl ?? "" }) }
           : {})}
@@ -30,6 +31,7 @@ export function ChecklistCard({ ctx }: { ctx: CardCtx }) {
         token={ctx.source.token}
         compact
         refresh={ctx.refresh}
+        focusTask={ctx.focusTask}
         onPay={() => ctx.onFocusCard("payment")}
       />
     );

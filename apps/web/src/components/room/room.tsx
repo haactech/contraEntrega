@@ -29,6 +29,8 @@ import type { CardCtx } from "@/components/cards/types";
 import { Chips } from "./chips";
 import { Composer, SELLER_EMPTY_PLACEHOLDER, Suggestions, type ComposerHandle } from "./composer";
 import { Feed } from "./feed";
+import { NoticeBanner } from "./notice-banner";
+import { conversationNotices, type StateNotice } from "@/lib/notices";
 import { ShareSheet, type ShareLinks } from "@/routes/seller/share-sheet";
 
 // Seller-only code: never part of the buyer's initial bundle.
@@ -53,15 +55,22 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [flash, setFlash] = useState<DockKind | null>(null);
   const [reviewRequest, setReviewRequest] = useState<CardCtx["reviewRequest"]>(null);
+  const [focusTask, setFocusTask] = useState<CardCtx["focusTask"]>(null);
   const [busyAction, setBusyAction] = useState<AllowedAction | null>(null);
   const [attachStatus, setAttachStatus] = useState<string | null>(null);
   const composer = useRef<ComposerHandle>(null);
   const flashTimer = useRef<number | undefined>(undefined);
+  const [notices, setNotices] = useState<StateNotice[]>([]);
+  const [unseen, setUnseen] = useState(0);
+  const prevView = useRef<ConversationView | null>(null);
 
   const key = sourceKey(source);
   useEffect(() => {
     setPending([]);
     setShare(null);
+    setNotices([]);
+    setUnseen(0);
+    prevView.current = null;
   }, [key]);
 
   const visiblePending = useMemo(
@@ -72,8 +81,15 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   const stick = useStickToBottom(view ? `${lastFeedKey(view.feed)}|${visiblePending.length}|${view.assistantBusy}` : null);
 
   useEffect(() => {
-    if (view) document.title = `${roomTitle(view)} · Trato`;
-  }, [view]);
+    if (view) document.title = `${unseen > 0 ? `(${unseen}) ` : ""}${roomTitle(view)} · Trato`;
+  }, [view, unseen]);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setUnseen(0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   const send = useCallback(
     (text: string, existingId?: string) => {
@@ -111,6 +127,26 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
   }, []);
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
+  /** Highlight a docked card without moving focus or scrolling (the user may be typing). */
+  const highlightCard = useCallback((kind: DockKind) => {
+    setDockCollapsed(false);
+    setFlash(kind);
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 4000);
+  }, []);
+
+  // «Qué cambió»: diff each new view against the previous one and announce the other party's changes.
+  useEffect(() => {
+    if (!view) return;
+    const fresh = conversationNotices(prevView.current, view);
+    prevView.current = view;
+    if (fresh.length === 0) return;
+    setNotices((cur) => [...fresh.filter((n) => !cur.some((c) => c.id === n.id)), ...cur].slice(0, 3));
+    const target = fresh.find((n) => n.target && n.target !== "feed")?.target;
+    if (target && target !== "feed" && activeCards(view).some((c) => c.kind === target)) highlightCard(target);
+    if (document.visibilityState === "hidden") setUnseen((u) => u + fresh.length);
+  }, [view, highlightCard]);
+
   const ctx: CardCtx | null = useMemo(
     () =>
       view
@@ -125,10 +161,11 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
             },
             onFocusCard: (k) => focusCard(k),
             reviewRequest,
+            focusTask,
           }
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, source.role, forceRefresh, applyView, reviewRequest, focusCard],
+    [view, source.role, forceRefresh, applyView, reviewRequest, focusTask, focusCard],
   );
 
   const attach = useCallback(
@@ -169,6 +206,13 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
       const cards = activeCards(view);
       if (action === "APPROVE_DELIVERY" || action === "DISPUTE_DELIVERY") {
         setReviewRequest({ kind: action === "APPROVE_DELIVERY" ? "APPROVE" : "DISPUTE", nonce: Date.now() });
+      }
+      if (action === "SUBMIT_TASK" || action === "APPROVE_TASK" || action === "REQUEST_ADJUSTMENT") {
+        // Open the first task that needs this viewer, not just the checklist.
+        const wanted = action === "SUBMIT_TASK" ? ["NEEDS_ADJUSTMENT", "TODO"] : ["IN_REVIEW"];
+        const tasks = [...(view.agreement?.tasks ?? [])].sort((a, b) => a.position - b.position);
+        const t = wanted.flatMap((st) => tasks.filter((x) => x.status === st))[0];
+        if (t) setFocusTask({ id: t.id, nonce: Date.now() });
       }
       if (action === "UPLOAD_EVIDENCE") {
         composer.current?.openFilePicker();
@@ -360,6 +404,17 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
           />
           {!emptyRoom && <NoCustodyNotice className="mb-3 text-xs" />}
         </div>
+        <NoticeBanner
+          notices={notices}
+          onDismiss={(id) => setNotices((cur) => cur.filter((n) => n.id !== id))}
+          onView={(n) => {
+            if (n.target === "feed") stick.scrollToBottom(true);
+            else if (n.target && cards.some((c) => c.kind === n.target)) {
+              focusCard(n.target);
+              if (n.taskId) setFocusTask({ id: n.taskId, nonce: Date.now() });
+            } else stick.scrollToBottom(true);
+          }}
+        />
         {stick.hasNew && (
           <button
             type="button"

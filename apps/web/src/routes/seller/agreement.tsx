@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Copy, FileDown, Link2, MessageSquare, RefreshCw, Share2, TriangleAlert } from "lucide-react";
 import {
@@ -11,6 +11,7 @@ import { api, isApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { usePolling } from "@/hooks/use-polling";
 import { computeProgress, PROGRESS_STEPS } from "@/lib/progress";
+import { eventNotices, type NoticeEvent } from "@/lib/notices";
 import {
   MILESTONE_STATUS_LABEL,
   MILESTONE_TITLE,
@@ -41,10 +42,29 @@ export default function AgreementRoute() {
 
   const { data, error, loading, refresh, setData } = usePolling<SellerAgreementView>(
     (_prev, signal) => api.getAgreement(id, signal),
-    // Cleaning: poll every few seconds (the client reviews task by task) until the deal is completed.
-    (d) => (d?.serviceType === "CLEANING" ? (d.agreement.status === "COMPLETED" ? "stop" : true) : false),
+    // Live deal: poll every few seconds so the client's changes show up quickly; stop once completed.
+    (d) => (!d ? false : d.agreement.status === "COMPLETED" ? "stop" : d.agreement.status !== "DRAFT"),
     [id],
   );
+
+  // «Qué cambió»: announce the client's / pey's new events between polls.
+  const prevEvents = useRef<NoticeEvent[] | null>(null);
+  useEffect(() => {
+    prevEvents.current = null;
+  }, [id]);
+  useEffect(() => {
+    if (!data) return;
+    const next = data.events.map((e) => ({ id: e.id, type: e.type, actorType: e.actorType, payload: e.payload }));
+    const fresh = eventNotices(prevEvents.current, next, {
+      viewer: "SELLER",
+      otherName: (data.agreement.buyerAcceptedName ?? data.agreement.buyerName).trim() || "El cliente",
+      cleaning: data.serviceType === "CLEANING",
+    });
+    prevEvents.current = next;
+    for (const n of fresh) {
+      toast.show(n.detail ? `${n.title}. ${n.detail}` : n.title, n.tone === "danger" ? "error" : n.tone);
+    }
+  }, [data, toast]);
 
   const [shareOpen, setShareOpen] = useState(initialShare !== null);
   const [links, setLinks] = useState<ShareLinks | null>(initialShare);

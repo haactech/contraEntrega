@@ -65,6 +65,8 @@ export interface TaskChecklistProps {
   milestones?: readonly MilestoneView[];
   /** Photo URLs are signed and expire: ask the owner for a fresh view. */
   onImageError?: () => void;
+  /** Open + highlight one task (a «qué cambió» notice or a chip asked for it). New nonce = new request. */
+  focusTask?: { id: string; nonce: number } | null;
 }
 
 const MAX_PHOTOS = TASK_LIMITS.maxAfterPerRevision;
@@ -120,6 +122,7 @@ function TaskCard({
   inProgress,
   actions,
   open,
+  highlight = false,
   onToggle,
   onImageError,
 }: {
@@ -129,6 +132,7 @@ function TaskCard({
   inProgress: boolean;
   actions: ChecklistActions;
   open: boolean;
+  highlight?: boolean;
   onToggle: () => void;
   onImageError?: () => void;
 }) {
@@ -198,6 +202,7 @@ function TaskCard({
       data-status={task.status}
       className={cn(
         "space-y-2 rounded-2xl border bg-white p-3",
+        highlight && "notice-pulse ring-2 ring-brand-600",
         task.status === "NEEDS_ADJUSTMENT" ? "border-red-300" : task.status === "APPROVED" ? "border-emerald-200" : "border-slate-200",
       )}
     >
@@ -383,6 +388,17 @@ export function TaskChecklist(props: TaskChecklistProps) {
   // Tasks needing action by the viewer start expanded where it helps (seller work is always inline).
   useEffect(() => setExpanded(!compact), [compact]);
 
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  useEffect(() => {
+    const req = props.focusTask;
+    if (!req || !tasks.some((t) => t.id === req.id)) return;
+    openTask(req.id);
+    setHighlighted(req.id);
+    const t = window.setTimeout(() => setHighlighted(null), 4000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.focusTask?.nonce]);
+
   function openTask(id: string) {
     setExpanded(true);
     setOpenTasks((s) => new Set(s).add(id));
@@ -435,6 +451,7 @@ export function TaskChecklist(props: TaskChecklistProps) {
               inProgress={inProgress}
               actions={actions}
               open={openTasks.has(t.id)}
+              highlight={highlighted === t.id}
               onToggle={() =>
                 setOpenTasks((s) => {
                   const n = new Set(s);

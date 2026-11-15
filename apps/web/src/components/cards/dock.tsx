@@ -149,7 +149,7 @@ export function Dock({ ctx, flash }: { ctx: CardCtx; collapsed: boolean; flash: 
           id={`card-${c.kind}`}
           tabIndex={-1}
           aria-label={LABEL[c.kind]}
-          className={cn("scroll-mt-2 rounded-2xl outline-none transition-shadow", flash === c.kind && "ring-4 ring-brand-600/60")}
+          className={cn("scroll-mt-2 rounded-2xl outline-none transition-shadow", flash === c.kind && "notice-pulse ring-4 ring-brand-600/60")}
         >
           {renderCard(c, ctx)}
         </section>

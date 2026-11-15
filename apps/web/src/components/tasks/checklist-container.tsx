@@ -10,6 +10,7 @@ type Props = {
   refresh: () => Promise<void> | void;
   onPay?: () => void;
   onShare?: () => void;
+  focusTask?: { id: string; nonce: number } | null;
 } & ({ role: "SELLER"; view: SellerAgreementView } | { role: "BUYER"; view: BuyerAgreementView; token: string });
 
 /** Wires `TaskChecklist` to the API for the seller (agreement id) or the buyer (share token). */
@@ -72,6 +73,7 @@ export function TaskChecklistContainer(props: Props) {
       counterpartName={counterpart}
       actions={actions}
       compact={props.compact ?? false}
+      focusTask={props.focusTask ?? null}
       {...(props.showTimeline ? { events: view.events, milestones: view.milestones } : {})}
       onImageError={() => {
         // Signed photo URLs expire; refresh at most once every 30 s so a broken image can't loop.

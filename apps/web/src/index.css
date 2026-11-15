@@ -27,3 +27,30 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* «Qué cambió» notices and the highlighted task. */
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.notice-in {
+  animation: notice-in 220ms ease-out;
+}
+@keyframes notice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(15 118 110 / 0);
+  }
+  30% {
+    box-shadow: 0 0 0 6px rgb(15 118 110 / 0.45);
+  }
+}
+.notice-pulse {
+  animation: notice-pulse 1.2s ease-out 2;
+}

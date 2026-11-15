@@ -283,10 +283,14 @@ export function conversationPollState(view: ConversationView | null): { awaiting
   if (!view) return { awaitingPayment: false, busy: false };
   const b = buyerAgreement(view);
   const s = sellerAgreement(view);
-  const awaitingPayment =
+  const paymentPending =
     b?.activePaymentRequest?.status === "AWAITING_PAYMENT" ||
     (s?.paymentRequests.some((p) => p.status === "AWAITING_PAYMENT") ?? false);
-  return { awaitingPayment, busy: view.assistantBusy };
+  // Fast polling also while the deal is live (shared, waiting on the other party, or in progress):
+  // the other side's changes should show up in seconds, not 15 s. ETag/304 keeps it cheap.
+  const status = view.agreement?.agreement.status ?? null;
+  const live = status !== null && status !== "DRAFT" && status !== "COMPLETED";
+  return { awaitingPayment: paymentPending || live, busy: view.assistantBusy };
 }
 
 /* ------------------------------------------------------------------ optimistic messages */

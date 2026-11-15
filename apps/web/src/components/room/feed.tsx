@@ -189,7 +189,13 @@ export function Feed({
   renderProposal: (m: FeedMessage) => ReactNode;
   empty: ReactNode;
 }) {
-  const entries = groupFeed(view.feed);
+  // Cleaning, client side: unsent photos are invisible to them, so «Foto agregada/eliminada» is just noise.
+  const hideDrafts = view.role === "BUYER" && view.agreement?.serviceType === "CLEANING";
+  const entries = groupFeed(
+    hideDrafts
+      ? view.feed.filter((i) => !(i.type === "event" && (i.eventType === "EVIDENCE_ADDED" || i.eventType === "EVIDENCE_REMOVED")))
+      : view.feed,
+  );
   const milestones = view.agreement?.milestones ?? [];
   const isEmpty = entries.length === 0 && pending.length === 0;
   return (
