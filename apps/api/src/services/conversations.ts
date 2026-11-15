@@ -1,4 +1,9 @@
 import type { ConversationAuthorType, ConversationView } from "@trato/shared";
+import { eq } from "drizzle-orm";
+import { requestAssistantTurn } from "../assistant/orchestrator";
+import { shouldAssistantRespond } from "../assistant/policy";
+import { agreements } from "../db/schema";
+import { findSeller } from "../repos/agreements";
 import type { Db } from "../db/client";
 import type { AppEnv } from "../env";
 import { notFound } from "../lib/errors";
@@ -57,4 +62,44 @@ export async function appendHumanMessage(
     return m.id;
   });
   return { id, seq: await messageSeq(env.DB, id) };
+}
+
+export interface PostMessageResult {
+  view: ConversationView;
+  /** Assistant work to run in the background (after the response is built); null when none. */
+  background: (() => Promise<void>) | null;
+}
+
+async function storeAndRequest(
+  env: AppEnv,
+  db: Db,
+  conv: ConversationRow,
+  role: "SELLER" | "BUYER",
+  authorName: string,
+  text: string,
+  now: number,
+): Promise<PostMessageResult> {
+  const status = conv.agreementId
+    ? ((await db.select({ s: agreements.status }).from(agreements).where(eq(agreements.id, conv.agreementId)).limit(1))[0]?.s ?? null)
+    : null;
+  const msg = await appendHumanMessage(env, conv.id, role, authorName, text, now);
+  const req = shouldAssistantRespond(status, text) ? await requestAssistantTurn(env, conv.id, msg.seq, now) : null;
+  // Respond right away: `assistantBusy` tells the UI to show "escribiendo" while the task runs.
+  const view = await buildConversationView(env, db, conv.id, role, now, { forceBusy: req?.acquired === true });
+  return { view, background: req?.acquired ? req.run : null };
+}
+
+/** Seller writes in their room. The assistant runs asynchronously (see `requestAssistantTurn`). */
+export async function postSellerMessage(env: AppEnv, db: Db, sellerId: string, conversationId: string, text: string, now: number): Promise<PostMessageResult> {
+  const conv = await loadOwnedConversation(db, sellerId, conversationId);
+  const seller = await findSeller(db, sellerId);
+  return storeAndRequest(env, db, conv, "SELLER", seller?.seller.displayName ?? "Prestador", text, now);
+}
+
+/** Buyer writes through the link. The route has already rejected the owner seller (invariant 3). */
+export async function postBuyerMessage(env: AppEnv, db: Db, agreementId: string, text: string, now: number): Promise<PostMessageResult> {
+  const b = await loadBundle(db, agreementId);
+  if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
+  const conv = await ensureConversationForAgreement(db, env.DB, b.agreement, now);
+  return storeAndRequest(env, db, conv, "BUYER", b.agreement.buyerAcceptedName ?? b.agreement.buyerName, text, now);
 }

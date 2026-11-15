@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { type ConversationView, type ListConversationsResponse } from "@trato/shared";
+import { PostMessageInputSchema, type ConversationView, type ListConversationsResponse } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { requireSeller } from "../middleware/session";
 import { conversationEtag, etagOfView, buildConversationView, listConversationSummaries } from "../services/conversation-view";
-import { createConversation, loadOwnedConversation } from "../services/conversations";
+import { createConversation, loadOwnedConversation, postSellerMessage } from "../services/conversations";
+import { runInBackground } from "../assistant/tasks";
+import { parseJson } from "../lib/validate";
 
 export const conversationRoutes = new Hono<HonoEnv>();
 conversationRoutes.use("*", requireSeller);
@@ -53,4 +55,12 @@ conversationRoutes.get("/", async (c) => {
 conversationRoutes.get("/:id", async (c) => {
   const conv = await loadOwnedConversation(createDb(c.env.DB), sellerId(c), c.req.param("id"));
   return respondWithView(c, conv.id, "SELLER");
+});
+
+conversationRoutes.post("/:id/messages", async (c) => {
+  const input = await parseJson(c, PostMessageInputSchema);
+  const { view, background } = await postSellerMessage(c.env, createDb(c.env.DB), sellerId(c), c.req.param("id"), input.text, Date.now());
+  if (background) runInBackground(c, background());
+  c.header("Cache-Control", "no-store");
+  return c.json(view);
 });

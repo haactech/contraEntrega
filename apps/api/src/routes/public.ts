@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { AcceptAgreementRequestSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
+import { AcceptAgreementRequestSchema, PostMessageInputSchema, ReviewRequestSchema, CreatePaymentRequestSchema, IDEMPOTENCY_KEY_HEADER } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
 import { viaOf } from "../lib/via";
@@ -14,7 +14,8 @@ import { exportResponse, renderExport } from "../services/export";
 import { notFound } from "../lib/errors";
 import { submitReview } from "../services/review";
 import { respondWithView } from "./conversations";
-import { conversationForAgreement } from "../services/conversations";
+import { conversationForAgreement, postBuyerMessage } from "../services/conversations";
+import { runInBackground } from "../assistant/tasks";
 import { acceptAgreement, agreementVersion, etagFor, getBuyerView } from "../services/public";
 
 export const publicRoutes = new Hono<HonoEnv>();
@@ -106,3 +107,17 @@ publicRoutes.get("/tratos/:token/conversation", rateLimit("RL_PUBLIC_READ", publ
   const conv = await conversationForAgreement(c.env, createDb(c.env.DB), c.get("access").agreementId, Date.now());
   return respondWithView(c, conv.id, "BUYER", { "Referrer-Policy": "no-referrer" });
 });
+
+publicRoutes.post(
+  "/tratos/:token/messages",
+  rateLimit("RL_PUBLIC_WRITE", publicKey("w")),
+  forbidOwnerSeller,
+  async (c) => {
+    const input = await parseJson(c, PostMessageInputSchema);
+    const { view, background } = await postBuyerMessage(c.env, createDb(c.env.DB), c.get("access").agreementId, input.text, Date.now());
+    if (background) runInBackground(c, background());
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+    return c.json(view);
+  },
+);
