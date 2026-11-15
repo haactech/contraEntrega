@@ -54,7 +54,7 @@ export interface ExtractContext {
 
 type Role = "adv" | "bal" | "tot";
 
-const ROLE_KEYWORDS: Array<{ role: Role; re: RegExp }> = [
+const ROLE_KEYWORDS: Array<{ role: Role; re: RegExp; weak?: boolean }> = [
   {
     role: "adv",
     re: /\b(?:anticip\w*|antisip\w*|adelant\w*|enganche|para (?:empezar|arrancar|iniciar|comenzar|apartar)|de entrada|primer pago|primera parte|al (?:inicio|empezar|arrancar|iniciar|comenzar)|por adelantado|ahorita|apartado|abono)\b/g,
@@ -65,8 +65,10 @@ const ROLE_KEYWORDS: Array<{ role: Role; re: RegExp }> = [
   },
   {
     role: "tot",
-    re: /\b(?:total|cobro|cobrar|cuesta\w*|sale en|me sale|precio|vale|costo|presupuesto|cotizacion|son|serian|seria|en todo|por todo|todo incluido|con todo y|mano de obra)\b/g,
+    re: /\b(?:total|cobro|cobrar|cuesta\w*|sale en|me sale|precio|vale|costo|presupuesto|cotizacion|en todo|por todo|todo incluido|con todo y|mano de obra)\b/g,
   },
+  // «son 4 mil»: weak, a stronger keyword in the same clause («anticipo») wins
+  { role: "tot", re: /\b(?:son|serian|seria)\b/g, weak: true },
 ];
 
 const CORRECTION_RE = /\b(?:mejor|perdon|digo|corrijo|en realidad|ya mejor|cambio|cambia|ahora si)\b/;
@@ -92,8 +94,8 @@ const gap = (aStart: number, aEnd: number, bStart: number, bEnd: number): number
 
 function assignRoles(folded: string, mentions: AmountMention[]): Array<Role | null> {
   const bounds = clauseBounds(folded);
-  const best: Array<{ role: Role; dist: number } | null> = mentions.map(() => null);
-  for (const { role, re } of ROLE_KEYWORDS) {
+  const best: Array<{ role: Role; dist: number; weak: boolean } | null> = mentions.map(() => null);
+  for (const { role, re, weak = false } of ROLE_KEYWORDS) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(folded)) !== null) {
@@ -112,7 +114,7 @@ function assignRoles(folded: string, mentions: AmountMention[]): Array<Role | nu
       });
       if (nearest >= 0) {
         const cur = best[nearest];
-        if (!cur || nd < cur.dist) best[nearest] = { role, dist: nd };
+        if (!cur || (cur.weak && !weak) || (cur.weak === weak && nd < cur.dist)) best[nearest] = { role, dist: nd, weak };
       }
     }
   }
@@ -135,16 +137,23 @@ const NOT_NAMES = new Set([
 const NAME_RE =
   /\b(?:para|cliente|comprador|a nombre de)\s*:?\s+(?:(?:el|la)\s+)?(?:(?:sr|sra|srita|senor|senora|don|dona|doctor|doctora|dr|dra|ing|lic|arq)\.?\s+)?([A-ZÁÉÍÓÚÑ][\p{L}'-]+(?:\s+(?:(?:de|del|de la)\s+)?[A-ZÁÉÍÓÚÑ][\p{L}'-]+){0,2})/gu;
 
+// «la señora Aurora», «el ingeniero Salas», «la directora Lupita»: honorific + capitalized name
+const HONORIFIC_RE =
+  /\b(?:senor|senora|sr|sra|srita|don|dona|ingeniero|ingeniera|ing|arquitecto|arquitecta|arq|licenciado|licenciada|lic|doctor|doctora|dr|dra|director|directora|maestro|maestra|profe)\.?\s+([A-ZÁÉÍÓÚÑ][\p{L}'-]+(?:\s+(?:(?:de|del|de la)\s+)?[A-ZÁÉÍÓÚÑ][\p{L}'-]+){0,2})/giu;
+
 export function findBuyerName(text: string): string | null {
   const nfc = text.normalize("NFC");
-  const re = new RegExp(NAME_RE.source, NAME_RE.flags);
-  let m: RegExpExecArray | null;
   let found: string | null = null;
-  while ((m = re.exec(nfc)) !== null) {
-    const name = (m[1] ?? "").trim();
-    const first = fold(name.split(/\s+/)[0] ?? "");
-    if (NOT_NAMES.has(first)) continue;
-    found = name;
+  for (const source of [NAME_RE, HONORIFIC_RE]) {
+    const re = new RegExp(source.source, source.flags);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(nfc)) !== null) {
+      const name = (m[1] ?? "").trim();
+      const first = fold(name.split(/\s+/)[0] ?? "");
+      if (NOT_NAMES.has(first)) continue;
+      found = name;
+    }
+    if (found) break;
   }
   return found;
 }
@@ -190,7 +199,8 @@ function cutObject(orig: string, folded: string, startIdx: number, cuts: number[
   return seg.slice(0, 70).trim();
 }
 
-const NOUN_TITLE_STOP = /^(?:son|es|pues|ok|si|sale|mejor|hola|buenas|buenos|oye|bueno|gracias|claro|perfecto|listo|ya|no|sera|seria|me|te|mi|mis|el|la|los|las|un|una|cuanto|cuando|quien|como|que|por)\b/;
+const NOUN_TITLE_STOP = /^(?:son|es|pues|ok|si|sale|mejor|hola|buenas|buenos|oye|bueno|gracias|claro|perfecto|listo|ya|no|sera|seria|me|te|mi|mis|el|la|los|las|un|una|cuanto|cuando|quien|como|que|por|quiero|necesito|voy|vamos|dame|pasame|mandame|dime|trato|cobro|cobrar)\b/;
+const NOT_A_JOB = /^(?:un\s+|el\s+|mi\s+)?(?:trato|acuerdo|negocio|contrato|cotizacion|presupuesto|comprobante)\b/;
 
 /** Title + description + criteria from the text; empty patch when no job is described. */
 function extractWork(
@@ -207,7 +217,7 @@ function extractWork(
     const verb = vm[1] ?? "";
     const objStart = folded.indexOf(vm[2] ?? "", vm.index + verb.length);
     object = cutObject(orig, folded, objStart, cuts);
-    if (object.length >= 2) title = `${VERBS[verb] ?? cap(verb)} ${object}`;
+    if (object.length >= 2 && !NOT_A_JOB.test(fold(object))) title = `${VERBS[verb] ?? cap(verb)} ${object}`;
   } else if (allowNoun) {
     const cand = cutObject(orig, folded, 0, cuts);
     const fc = fold(cand);

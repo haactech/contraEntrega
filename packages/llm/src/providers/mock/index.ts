@@ -231,7 +231,8 @@ export function mockAssistantTurn(state: MockState, lines: Line[]): AssistantTur
   const safety = detectSafety(folded);
 
   const negotiating = !state.acuerdo || state.acuerdo.estado === "DRAFT" || state.acuerdo.estado === "SHARED";
-  const baseTerms = state.propuestaAbierta?.terminos ?? (negotiating ? state.acuerdo?.terminos : undefined) ?? null;
+  // After acceptance the agreement terms are only a reference: nothing can be revised.
+  const baseTerms = state.propuestaAbierta?.terminos ?? state.acuerdo?.terminos ?? null;
 
   if (batch.length === 0) return turn({ intent: "NONE", reply: "Aquí sigo por si me necesitan." });
 

@@ -200,6 +200,15 @@ export function findMoneyMentions(folded: string): MoneyMention[] {
         break;
       }
     }
+    // «3 mil 500» = 3,500: hundreds spoken right after «mil»
+    let extraCents = 0;
+    if (mult === 1000) {
+      const hm = /^\s+(\d{3})\b(?!\s*(?:mil|k|%|\/|[.,]\d))/.exec(folded.slice(end));
+      if (hm) {
+        extraCents = Number(hm[1]) * 100;
+        end += hm[0].length;
+      }
+    }
     const curRe = new RegExp(`^\\s*${CURRENCY}(?![a-z])`);
     const cm = curRe.exec(folded.slice(end));
     if (cm) end += cm[0].length;
@@ -214,7 +223,7 @@ export function findMoneyMentions(folded: string): MoneyMention[] {
       Boolean(cm) ||
       (base >= 100 && !UNIT_AFTER.test(folded.slice(end)) && folded[end] !== "/");
     if (!accept) continue;
-    out.push({ kind: "money", start: m.index, end, cents: centsFrom(decimal, mult) });
+    out.push({ kind: "money", start: m.index, end, cents: centsFrom(decimal, mult) + extraCents });
   }
 
   // number words

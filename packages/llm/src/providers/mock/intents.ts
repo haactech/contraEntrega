@@ -37,7 +37,7 @@ interface ActionRule {
 const SELLER_RULES: ActionRule[] = [
   { action: "REDELIVER", re: /\b(?:vuelvo a entregar|entregar de nuevo|re ?entrega|ya (?:lo )?corregi|ya (?:quedo )?corregid)\b/ },
   { action: "REQUEST_REVIEW", re: /\b(?:ya termine|ya quedo|ya lo termine|ya acabe|ya esta listo|trabajo terminado|terminado el trabajo|solicitar revision|mandalo a revision|pide la revision)\b/ },
-  { action: "UPLOAD_EVIDENCE", re: /\b(?:subir|mandar|enviar|adjuntar|pasar|cargar)\s+(?:las\s+|unas\s+)?(?:fotos?|evidencias?|imagenes)|\bte mando (?:las )?fotos\b|\bquiero subir\b/ },
+  { action: "UPLOAD_EVIDENCE", re: /\b(?:subir|mandar|enviar|adjuntar|pasar|cargar)\s+(?:las\s+|unas\s+)?(?:mas\s+)?(?:fotos?|evidencias?|imagenes)|\bte mando (?:las )?fotos\b|\bquiero subir\b/ },
   { action: "SHARE_LINK", re: /\b(?:compartir|comparte)\b|\b(?:mandame|pasame|dame)\s+el\s+(?:link|enlace)\b|\benviar(?:le)?\s+el\s+(?:link|enlace)\b|\bwhatsapp\b/ },
   { action: "CONFIRM_PROPOSAL", re: /\bconfirmo\b|\bconfirmar la propuesta\b|\basi esta bien\b|\bla propuesta (?:esta|queda) (?:bien|correcta)\b|\bmandala\b/ },
   { action: "EXPORT", re: /\b(?:comprobante|descargar|exportar)\b/ },
