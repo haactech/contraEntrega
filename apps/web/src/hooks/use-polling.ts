@@ -20,7 +20,7 @@ export interface PolledResource<T> {
  */
 export function usePolling<T>(
   load: (previous: T | null, signal: AbortSignal) => Promise<T | null>,
-  awaitingPayment: (data: T | null) => boolean,
+  awaitingPayment: (data: T | null) => boolean | { awaitingPayment: boolean; busy: boolean },
   deps: ReadonlyArray<unknown>,
 ): PolledResource<T> {
   const [data, setDataState] = useState<T | null>(null);
@@ -46,7 +46,9 @@ export function usePolling<T>(
 
   const schedule = useCallback(() => {
     window.clearTimeout(timer.current);
-    const ms = pollInterval({ awaitingPayment: awaitingRef.current(dataRef.current), hidden: document.visibilityState === "hidden" });
+    const hint = awaitingRef.current(dataRef.current);
+    const flags = typeof hint === "boolean" ? { awaitingPayment: hint, busy: false } : hint;
+    const ms = pollInterval({ ...flags, hidden: document.visibilityState === "hidden" });
     if (ms === null || !alive.current) return;
     timer.current = window.setTimeout(() => void run(), ms);
     // eslint-disable-next-line @typescript-eslint/no-use-before-define

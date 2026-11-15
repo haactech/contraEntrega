@@ -1,12 +1,14 @@
+export const POLL_BUSY_MS = 1_500;
 export const POLL_FAST_MS = 3_000;
 export const POLL_SLOW_MS = 15_000;
 
 /**
- * Adaptive polling interval (spec §A.7): 3 s while a payment is pending,
- * 15 s otherwise, and `null` (paused) when the tab is hidden.
+ * Adaptive polling interval: 1.5 s while the assistant is typing, 3 s while a payment is
+ * pending, 15 s otherwise, and `null` (paused) when the tab is hidden.
  */
-export function pollInterval(opts: { awaitingPayment: boolean; hidden: boolean }): number | null {
+export function pollInterval(opts: { awaitingPayment: boolean; hidden: boolean; busy?: boolean }): number | null {
   if (opts.hidden) return null;
+  if (opts.busy) return POLL_BUSY_MS;
   return opts.awaitingPayment ? POLL_FAST_MS : POLL_SLOW_MS;
 }
 

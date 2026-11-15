@@ -36,12 +36,15 @@ export function PaymentPanel({
   activeRequest,
   viewVersion,
   onChanged,
+  release = false,
 }: {
   token: string;
   milestone: MilestoneView;
   activeRequest: PaymentRequestView | null;
   viewVersion: number;
   onChanged: () => void;
+  /** Balance after the buyer approved the delivery: «Liberar el saldo» with «Enviar a mi banco» first on touch devices. */
+  release?: boolean;
 }) {
   const [localPr, setLocalPr] = useState<PaymentRequestView | null>(null);
   const [busy, setBusy] = useState<PaymentMethod | null>(null);
@@ -91,7 +94,7 @@ export function PaymentPanel({
       <Awaiting
         token={token}
         pr={pr}
-        title={title}
+        title={release ? "el saldo" : title}
         onChanged={onChanged}
         onLocal={setLocalPr}
         onRegenerate={() => void start(pr.method)}
@@ -149,7 +152,7 @@ export function PaymentPanel({
         disabled={busy !== null}
         onClick={() => void start("CODI_PN")}
       >
-        <Smartphone className="size-5" aria-hidden /> Enviar solicitud a mi teléfono
+        <Smartphone className="size-5" aria-hidden /> {release ? "Enviar a mi banco" : "Enviar solicitud a mi teléfono"}
       </Button>
     </div>
   );
@@ -157,8 +160,13 @@ export function PaymentPanel({
   return (
     <Card className="space-y-4" aria-labelledby="pay-title">
       <div>
-        <CardTitle id="pay-title">Pagar {title.toLowerCase()}</CardTitle>
+        <CardTitle id="pay-title">{release ? "Liberar el saldo" : `Pagar ${title.toLowerCase()}`}</CardTitle>
         <p className="text-3xl font-extrabold text-brand-800">{formatMxn(milestone.amountCents)}</p>
+        {release && (
+          <p className="mt-1 text-sm text-slate-700">
+            Aprobaste la entrega. Para liberar el saldo, autoriza el pago en la app de tu banco: el dinero llega directo al prestador.
+          </p>
+        )}
       </div>
       {error && <ErrorBox message={error} />}
       {coarse ? [pushBlock, qrBlock] : [qrBlock, pushBlock]}

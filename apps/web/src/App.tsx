@@ -5,12 +5,16 @@ import { DemoBanner, ModeProvider } from "@/hooks/use-mode";
 import { ToastProvider } from "@/components/ui/toast";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Page } from "@/components/layout";
+import { AGENTS_ROUTE } from "@/lib/routes";
 
 // Route-level code splitting: the buyer route never imports seller code.
 const HomeRoute = lazy(() => import("@/routes/seller/home"));
+const NewConversationRoute = lazy(() => import("@/routes/seller/new-conversation"));
 const NewAgreementRoute = lazy(() => import("@/routes/seller/new-agreement"));
 const AgreementRoute = lazy(() => import("@/routes/seller/agreement"));
-const BuyerRoute = lazy(() => import("@/routes/buyer/buyer-view"));
+const SellerRoomRoute = lazy(() => import("@/routes/seller/room"));
+const AgentsRoute = lazy(() => import("@/routes/seller/agents"));
+const BuyerRoute = lazy(() => import("@/routes/buyer/buyer-room"));
 
 function Fallback() {
   return (
@@ -40,8 +44,11 @@ export function App() {
           <Suspense fallback={<Fallback />}>
             <Routes>
               <Route path="/" element={<HomeRoute />} />
-              <Route path="/tratos/nuevo" element={<NewAgreementRoute />} />
+              <Route path="/tratos/nuevo" element={<NewConversationRoute />} />
+              <Route path="/tratos/nuevo/formulario" element={<NewAgreementRoute />} />
               <Route path="/tratos/:id" element={<AgreementRoute />} />
+              <Route path="/salas/:id" element={<SellerRoomRoute />} />
+              <Route path={AGENTS_ROUTE} element={<AgentsRoute />} />
               <Route path="/t/:token" element={<BuyerRoute />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

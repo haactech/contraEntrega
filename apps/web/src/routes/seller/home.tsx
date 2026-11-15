@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronRight, LogOut, Plus, UserRound } from "lucide-react";
-import { APP_ROUTES, formatMxn, type AgreementSummary, type SellerSummary } from "@trato/shared";
+import { Bot, ChevronRight, LogOut, Plus, UserRound } from "lucide-react";
+import {
+  APP_ROUTES,
+  formatMxn,
+  type AgreementSummary,
+  type ConversationSummary,
+  type SellerSummary,
+} from "@trato/shared";
 import { api, isApiError } from "@/lib/api";
+import { isMissingEndpoint } from "@/lib/endpoint";
 import { friendlyError } from "@/lib/errors";
 import { chipFor, formatDate } from "@/lib/labels";
+import { AGENTS_ROUTE } from "@/lib/routes";
 import { cn } from "@/lib/cn";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/form";
@@ -172,20 +180,40 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (s: SellerSummary) => void })
   );
 }
 
+type ListState =
+  | { kind: "conversations"; items: ConversationSummary[] }
+  | { kind: "agreements"; items: AgreementSummary[] };
+
+function conversationChip(c: ConversationSummary): { label: string; tone: Tone } {
+  if (c.nextAction) return chipFor({ nextAction: c.nextAction });
+  if (c.hasOpenProposal) return { label: "Propuesta por confirmar", tone: "warn" };
+  return { label: c.agreementId ? "En curso" : "Conversando", tone: "neutral" };
+}
+
 function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: () => void }) {
   const navigate = useNavigate();
-  const [items, setItems] = useState<AgreementSummary[] | null>(null);
+  const [list, setList] = useState<ListState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
     api
-      .listAgreements()
-      .then((r) => setItems(r.agreements))
+      .listConversations()
+      .then((r) => setList({ kind: "conversations", items: r.conversations }))
       .catch((e: unknown) => {
-        if (isApiError(e, "UNAUTHORIZED")) onLogout();
-        else setError(friendlyError(e));
+        if (isApiError(e, "UNAUTHORIZED")) return onLogout();
+        // Chat backend not deployed yet: show the v0.2 agreement list.
+        if (isMissingEndpoint(e)) {
+          return api
+            .listAgreements()
+            .then((r) => setList({ kind: "agreements", items: r.agreements }))
+            .catch((e2: unknown) => {
+              if (isApiError(e2, "UNAUTHORIZED")) onLogout();
+              else setError(friendlyError(e2));
+            });
+        }
+        setError(friendlyError(e));
       });
   }, [onLogout]);
   useEffect(load, [load]);
@@ -199,6 +227,8 @@ function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: 
     }
     onLogout();
   }
+
+  const empty = list !== null && list.items.length === 0;
 
   return (
     <Page
@@ -215,48 +245,96 @@ function AgreementList({ seller, onLogout }: { seller: SellerSummary; onLogout: 
         </p>
       </div>
 
-      <Button size="lg" block onClick={() => navigate(APP_ROUTES.newAgreement)}>
-        <Plus className="size-5" aria-hidden /> Nuevo trato
-      </Button>
+      <div className="space-y-1">
+        <Button size="lg" block onClick={() => navigate(APP_ROUTES.newAgreement)}>
+          <Plus className="size-5" aria-hidden /> Nuevo trato
+        </Button>
+        <p className="text-center text-sm">
+          <Link to={APP_ROUTES.newAgreementForm} className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline">
+            Usar formulario
+          </Link>
+        </p>
+      </div>
 
       {error && <ErrorBox message={error} onRetry={load} />}
-      {!items && !error && (
+      {!list && !error && (
         <div className="space-y-2">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
       )}
-      {items && items.length === 0 && (
+      {empty && (
         <Card className="text-center text-slate-700">
-          Aún no tienes tratos. Crea el primero y compártelo por WhatsApp.
+          Aún no tienes tratos. Cuéntale a Trato el primero y compártelo por WhatsApp.
         </Card>
       )}
       <ul className="space-y-2">
-        {items?.map((a) => {
-          const chip = chipFor(a);
-          return (
-            <li key={a.id}>
-              <Link
-                to={APP_ROUTES.agreement(a.id)}
-                className="flex min-h-20 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-600">{a.code}</span>
-                    <Badge tone={chip.tone}>{chip.label}</Badge>
+        {list?.kind === "conversations" &&
+          list.items.map((c) => {
+            const chip = conversationChip(c);
+            return (
+              <li key={c.id}>
+                <Link
+                  to={APP_ROUTES.room(c.id)}
+                  className="flex min-h-20 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      {c.agreementCode && <span className="text-xs font-bold text-slate-600">{c.agreementCode}</span>}
+                      <Badge tone={chip.tone}>{chip.label}</Badge>
+                    </span>
+                    <span className="mt-0.5 block truncate font-bold">{c.title ?? "Trato nuevo"}</span>
+                    <span className="block truncate text-sm text-slate-700">
+                      {[c.buyerName, c.totalCents !== null ? formatMxn(c.totalCents) : null].filter(Boolean).join(" · ") ||
+                        c.lastMessagePreview ||
+                        "Sin mensajes todavía"}
+                    </span>
                   </span>
-                  <span className="mt-0.5 block truncate font-bold">{a.title}</span>
-                  <span className="block truncate text-sm text-slate-700">
-                    {a.buyerName} · {formatMxn(a.totalCents)}
-                    {a.dueDate ? ` · para ${formatDate(a.dueDate)}` : ""}
+                  <ChevronRight className="size-5 shrink-0 text-slate-400" aria-hidden />
+                </Link>
+              </li>
+            );
+          })}
+        {list?.kind === "agreements" &&
+          list.items.map((a) => {
+            const chip = chipFor(a);
+            return (
+              <li key={a.id}>
+                <Link
+                  to={APP_ROUTES.agreement(a.id)}
+                  className="flex min-h-20 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-600">{a.code}</span>
+                      <Badge tone={chip.tone}>{chip.label}</Badge>
+                    </span>
+                    <span className="mt-0.5 block truncate font-bold">{a.title}</span>
+                    <span className="block truncate text-sm text-slate-700">
+                      {a.buyerName} · {formatMxn(a.totalCents)}
+                      {a.dueDate ? ` · para ${formatDate(a.dueDate)}` : ""}
+                    </span>
                   </span>
-                </span>
-                <ChevronRight className="size-5 shrink-0 text-slate-400" aria-hidden />
-              </Link>
-            </li>
-          );
-        })}
+                  <ChevronRight className="size-5 shrink-0 text-slate-400" aria-hidden />
+                </Link>
+              </li>
+            );
+          })}
       </ul>
+
+      <Link
+        to={AGENTS_ROUTE}
+        className="flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-800">
+          <Bot className="size-5" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-bold">Conectar un agente (MCP)</span>
+          <span className="block text-slate-700">Deja que tu asistente de IA gestione tus tratos con una llave.</span>
+        </span>
+        <ChevronRight className="size-5 shrink-0 text-slate-400" aria-hidden />
+      </Link>
       <NoCustodyNotice />
     </Page>
   );

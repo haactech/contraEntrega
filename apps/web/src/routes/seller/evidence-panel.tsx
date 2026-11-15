@@ -22,11 +22,14 @@ interface Pending {
 export function EvidencePanel({
   view,
   redelivery,
+  submitLabel,
   onUpdated,
   onView,
 }: {
   view: SellerAgreementView;
   redelivery: boolean;
+  /** Override the submit button text (the room uses «Ya terminé»). */
+  submitLabel?: string;
   /** Re-fetch the agreement after an upload/delete. */
   onUpdated: () => Promise<void>;
   onView: (v: SellerAgreementView) => void;
@@ -176,7 +179,7 @@ export function EvidencePanel({
 
       {error && <ErrorBox message={error} />}
       <Button size="lg" block loading={sending} disabled={saved.length < 1 || busyUploading} onClick={() => void requestReview()}>
-        {redelivery ? "Volver a entregar y solicitar revisión" : "Solicitar revisión"}
+        {submitLabel ?? (redelivery ? "Volver a entregar y solicitar revisión" : "Solicitar revisión")}
       </Button>
     </Card>
   );

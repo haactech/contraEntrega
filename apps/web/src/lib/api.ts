@@ -7,6 +7,11 @@ import {
   EVIDENCE_LIMITS,
   HealthResponseSchema,
   IDEMPOTENCY_KEY_HEADER,
+  ConfirmProposalResponseSchema,
+  ConversationViewSchema,
+  CreateApiKeyResponseSchema,
+  ListApiKeysResponseSchema,
+  ListConversationsResponseSchema,
   ListAgreementsResponseSchema,
   PaymentRequestResponseSchema,
   PublicAgreementResponseSchema,
@@ -18,6 +23,8 @@ import {
   UploadEvidenceResponseSchema,
   type AcceptAgreementRequest,
   type CreateAgreementInput,
+  type CreateApiKeyInput,
+  type ConversationView,
   type CreatePaymentRequestInput,
   type CreateSessionRequest,
   type ErrorCode,
@@ -116,6 +123,19 @@ export function createApiClient(fetchImpl?: FetchLike) {
     if (!res.ok) throw await failure(res);
   }
 
+  async function conditionalConversation(
+    path: string,
+    etag?: string | null,
+    signal?: AbortSignal,
+  ): Promise<Conditional<ConversationView>> {
+    const headers: Record<string, string> = etag ? { "If-None-Match": etag } : {};
+    const res = await send(path, { headers, signal });
+    if (res.status === 304) return { notModified: true };
+    if (!res.ok) throw await failure(res);
+    const data = await parse(res, ConversationViewSchema);
+    return { notModified: false, data, etag: res.headers.get("ETag") };
+  }
+
   return {
     health: (signal?: AbortSignal) => call(API_ROUTES.health, { schema: HealthResponseSchema, signal }),
     demoSellers: () => call(API_ROUTES.demoSellers, { schema: DemoSellersResponseSchema }),
@@ -189,6 +209,32 @@ export function createApiClient(fetchImpl?: FetchLike) {
       }),
     submitReview: (token: string, body: ReviewRequest) =>
       call(API_ROUTES.publicReview(token), { method: "POST", body, schema: ReviewResponseSchema }),
+
+    // ---- v0.3 conversations ----
+    createConversation: () =>
+      call(API_ROUTES.conversations, { method: "POST", body: {}, schema: ConversationViewSchema }),
+    listConversations: (signal?: AbortSignal) =>
+      call(API_ROUTES.conversations, { schema: ListConversationsResponseSchema, signal }),
+    getConversation: (id: string, etag?: string | null, signal?: AbortSignal) =>
+      conditionalConversation(API_ROUTES.conversation(id), etag, signal),
+    postMessage: (id: string, text: string) =>
+      call(API_ROUTES.conversationMessages(id), { method: "POST", body: { text }, schema: ConversationViewSchema }),
+    confirmProposal: (id: string, proposalId: string) =>
+      call(API_ROUTES.conversationProposalConfirm(id, proposalId), {
+        method: "POST",
+        body: {},
+        schema: ConfirmProposalResponseSchema,
+      }),
+    getPublicConversation: (token: string, etag?: string | null, signal?: AbortSignal) =>
+      conditionalConversation(API_ROUTES.publicConversation(token), etag, signal),
+    postPublicMessage: (token: string, text: string) =>
+      call(API_ROUTES.publicMessages(token), { method: "POST", body: { text }, schema: ConversationViewSchema }),
+
+    // ---- API keys (MCP) ----
+    listApiKeys: (signal?: AbortSignal) => call(API_ROUTES.apiKeys, { schema: ListApiKeysResponseSchema, signal }),
+    createApiKey: (body: CreateApiKeyInput) =>
+      call(API_ROUTES.apiKeys, { method: "POST", body, schema: CreateApiKeyResponseSchema }),
+    revokeApiKey: (id: string) => callVoid(API_ROUTES.apiKey(id), { method: "DELETE" }),
 
     simulatePayment: (paymentRequestId: string) =>
       call(API_ROUTES.devSimulatePayment, {
