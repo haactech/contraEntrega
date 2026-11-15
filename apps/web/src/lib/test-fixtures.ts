@@ -47,6 +47,7 @@ export function textMsg(id: string, seq: number, minutes: number, authorType: Fe
     text,
     proposal: null,
     assistant: authorType === "ASSISTANT" ? { provider: "mock", model: "mock" } : null,
+    system: false,
   };
 }
 

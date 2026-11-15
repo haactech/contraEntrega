@@ -37,7 +37,8 @@ export const GROUP_WINDOW_MS = 5 * 60_000;
 export type FeedEntry =
   | { kind: "messages"; key: string; authorType: FeedMessage["authorType"]; authorName: string; items: FeedMessage[] }
   | { kind: "proposal"; key: string; item: FeedMessage }
-  | { kind: "event"; key: string; item: FeedEvent };
+  | { kind: "event"; key: string; item: FeedEvent }
+  | { kind: "system"; key: string; item: FeedMessage };
 
 /**
  * Sorted feed -> render entries. Text messages from the same author within `GROUP_WINDOW_MS`
@@ -49,6 +50,11 @@ export function groupFeed(feed: readonly FeedItem[]): FeedEntry[] {
   for (const item of sortFeed(feed)) {
     if (item.type === "event") {
       out.push({ kind: "event", key: item.id, item });
+      continue;
+    }
+    if (item.system) {
+      out.push({ kind: "system", key: item.id, item });
+      lastAt = 0;
       continue;
     }
     if (item.kind === "PROPOSAL" && item.proposal) {

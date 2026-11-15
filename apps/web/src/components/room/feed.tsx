@@ -213,6 +213,14 @@ export function Feed({
             );
           case "event":
             return <EventCard key={e.key} event={e.item} milestones={milestones} />;
+          case "system":
+            return (
+              <li key={e.key} className="flex justify-center px-2">
+                <p role="status" className="max-w-[90%] rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-900 ring-1 ring-amber-200">
+                  {e.item.text}
+                </p>
+              </li>
+            );
         }
       })}
       {pending.map((p) => (

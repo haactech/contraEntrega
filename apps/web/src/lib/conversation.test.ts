@@ -282,3 +282,14 @@ describe("missing endpoint detection", () => {
     expect(isMissingEndpoint(new ApiError("NETWORK", "x"))).toBe(false);
   });
 });
+
+describe("system messages", () => {
+  it("renders deterministic system notices as their own entry, never grouped with assistant text", async () => {
+    const { textMsg } = await import("./test-fixtures");
+    const a = textMsg("a", 1, 0, "ASSISTANT", "Hola");
+    const sys = { ...textMsg("s", 2, 0, "ASSISTANT", "No pude procesar tu mensaje", 10), system: true };
+    const b = textMsg("b", 3, 0, "ASSISTANT", "Listo", 20);
+    const entries = groupFeed([a, sys, b]);
+    expect(entries.map((e) => e.kind)).toEqual(["messages", "system", "messages"]);
+  });
+});

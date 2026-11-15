@@ -54,17 +54,8 @@ export default function AgreementRoute() {
     if (isApiError(error, "UNAUTHORIZED")) navigate(APP_ROUTES.home, { replace: true });
   }, [error, navigate]);
 
-  // Every agreement has a room (v0.3). The v0.2 view has no conversation id, so look it up.
-  const [roomId, setRoomId] = useState<string | null>(null);
-  useEffect(() => {
-    const c = new AbortController();
-    setRoomId(null);
-    api
-      .listConversations(c.signal)
-      .then((r) => setRoomId(r.conversations.find((x) => x.agreementId === id)?.id ?? null))
-      .catch(() => undefined); // endpoint not deployed yet: no link
-    return () => c.abort();
-  }, [id]);
+  // Every agreement has a room (v0.3); the seller view carries its conversation id.
+  const roomId = data?.conversationId ?? null;
 
   const currentLinks: ShareLinks | null = useMemo(() => {
     if (data?.shareUrl && data.whatsappUrl) return { shareUrl: data.shareUrl, whatsappUrl: data.whatsappUrl };
