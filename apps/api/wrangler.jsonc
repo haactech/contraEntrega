@@ -30,6 +30,14 @@
   "vars": {
     "PAYMENTS_MODE": "mock",
     "PUBLIC_APP_URL": "http://localhost:8787",
-    "PEY_BASE_URL": "https://api.pey.mx"
+    "PEY_BASE_URL": "https://api.pey.mx",
+    // Asistente conversacional. LLM_PROVIDER: mock | none | anthropic | openai-compatible.
+    // LLM_API_KEY es secreto (wrangler secret put LLM_API_KEY / .dev.vars), nunca va aquí.
+    "LLM_PROVIDER": "mock",
+    "LLM_MODEL": "",
+    "LLM_BASE_URL": "",
+    "LLM_EFFORT": "",
+    "LLM_TIMEOUT_MS": "15000",
+    "LLM_STRUCTURED": "native"
   }
 }

@@ -10,6 +10,15 @@ export interface AppEnv {
   PAYMENTS_MODE: PaymentsMode;
   PUBLIC_APP_URL: string;
   PEY_BASE_URL: string;
+  /** Assistant (spec v0.3 §4). `LLM_PROVIDER`: mock (default) | none | anthropic | openai-compatible. */
+  LLM_PROVIDER?: string;
+  LLM_MODEL?: string;
+  LLM_BASE_URL?: string;
+  LLM_EFFORT?: string;
+  LLM_TIMEOUT_MS?: string;
+  LLM_STRUCTURED?: string;
+  /** Secret (wrangler secret put LLM_API_KEY / .dev.vars). Never returned or logged. */
+  LLM_API_KEY?: string;
   /** Secrets (wrangler secret put / .dev.vars). */
   PEY_API_KEY: string;
   PEY_WEBHOOK_SECRET: string;

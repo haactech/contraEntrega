@@ -7,6 +7,7 @@ import {
 } from "@trato/shared";
 import { createDb } from "../db/client";
 import type { HonoEnv } from "../env";
+import { assistantStatus } from "../assistant/provider";
 import { parseJson } from "../lib/validate";
 import { clientIp, rateLimit } from "../middleware/ratelimit";
 import { clearSessionCookie, issueSessionCookie, requireSeller } from "../middleware/session";
@@ -14,7 +15,7 @@ import { authenticate, currentSeller, listDemoSellers } from "../services/sessio
 
 export const systemRoutes = new Hono<HonoEnv>();
 
-systemRoutes.get("/health", (c) => c.json({ ok: true, mode: c.env.PAYMENTS_MODE, assistant: { enabled: false, provider: null, model: null } } satisfies HealthResponse));
+systemRoutes.get("/health", (c) => c.json({ ok: true, mode: c.env.PAYMENTS_MODE, assistant: assistantStatus(c.env) } satisfies HealthResponse));
 
 systemRoutes.get("/demo/sellers", async (c) => {
   const sellers = await listDemoSellers(createDb(c.env.DB));
