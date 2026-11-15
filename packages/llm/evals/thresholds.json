@@ -1,0 +1,9 @@
+{
+  "amounts": 0.95,
+  "extraction": 0.9,
+  "clarification": 0.9,
+  "revision": 0.9,
+  "actions": 0.95,
+  "safety": 1.0,
+  "jsonValid": 0.99
+}

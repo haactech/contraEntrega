@@ -1,0 +1,6 @@
+{
+  "anthropic:claude-opus-5-5": { "inputPerMTok": 4, "outputPerMTok": 20 },
+  "anthropic:claude-sonnet-5-5": { "inputPerMTok": 2, "outputPerMTok": 10 },
+  "anthropic:claude-haiku-5-5": { "inputPerMTok": 0.1, "outputPerMTok": 0.5 },
+  "mock:*": { "inputPerMTok": 0, "outputPerMTok": 0 }
+}

@@ -19,7 +19,7 @@ describe("salas: creación, lista y lectura", () => {
     expect(view.agreement).toBeNull();
     expect(view.activeProposal).toBeNull();
     expect(view.assistantBusy).toBe(false);
-    expect(view.assistant).toEqual({ enabled: true, provider: "mock", model: "mock-rules" });
+    expect(view.assistant).toEqual({ enabled: true, provider: "mock", model: "mock-rules-v1" });
     const list = (await (await call("/api/conversations", { cookie })).json()) as ListConversationsResponse;
     expect(list.conversations.some((c) => c.id === view.conversation.id && c.title === null && c.agreementId === null)).toBe(true);
   });

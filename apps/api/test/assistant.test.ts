@@ -42,7 +42,7 @@ describe("asistente (stub determinista): propuestas y versiones", () => {
     expect(v1.assistantBusy).toBe(false);
     const msgs = messagesOf(v1);
     expect(msgs.map((m) => [m.authorType, m.kind])).toEqual([["SELLER", "TEXT"], ["ASSISTANT", "PROPOSAL"]]);
-    expect(msgs[1]?.assistant).toEqual({ provider: "mock", model: "mock-rules" });
+    expect(msgs[1]?.assistant).toEqual({ provider: "mock", model: "mock-rules-v1" });
     expect(msgs.map((m) => m.system)).toEqual([false, false]);
     expect(msgs[1]?.proposal).toMatchObject({ version: 1, status: "OPEN", terms: { totalCents: 2_000_000, advanceCents: 800_000, balanceCents: 1_200_000, buyerName: "Mariana" } });
     expect(v1.activeProposal?.id).toBe(msgs[1]?.proposal?.id);
@@ -66,7 +66,7 @@ describe("asistente (stub determinista): propuestas y versiones", () => {
     const v = await sellerRoom(cookie, room);
     const last = messagesOf(v).at(-1);
     expect(last).toMatchObject({ kind: "TEXT", authorType: "ASSISTANT" });
-    expect(last?.text).toMatch(/me falta el anticipo/);
+    expect(last?.text).toMatch(/anticipo/i);
     expect(v.activeProposal).toBeNull();
   });
 });

@@ -19,7 +19,7 @@ beforeAll(seedMock);
 describe("health y perfiles demo", () => {
   it("health responde ok y modo", async () => {
     const res = await call("/api/health");
-    expect(await res.json()).toEqual({ ok: true, mode: "mock", assistant: { enabled: true, provider: "mock", model: "mock-rules" } });
+    expect(await res.json()).toEqual({ ok: true, mode: "mock", assistant: { enabled: true, provider: "mock", model: "mock-rules-v1" } });
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 

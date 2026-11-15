@@ -21,7 +21,8 @@
     "drizzle-orm": "0.45.4",
     "hono": "4.13.18",
     "standardwebhooks": "^1.1.1",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@trato/llm": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.8.2",
