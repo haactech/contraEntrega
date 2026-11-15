@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowDown, ArrowLeft, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { API_ROUTES, APP_ROUTES, EVIDENCE_LIMITS, type AllowedAction, type ConversationView } from "@trato/shared";
@@ -28,10 +28,9 @@ import type { CardCtx } from "@/components/cards/types";
 import { Chips } from "./chips";
 import { Composer, SELLER_EMPTY_PLACEHOLDER, Suggestions, type ComposerHandle } from "./composer";
 import { Feed } from "./feed";
-import type { ShareLinks } from "@/routes/seller/share-sheet";
+import { ShareSheet, type ShareLinks } from "@/routes/seller/share-sheet";
 
 // Seller-only code: never part of the buyer's initial bundle.
-const ShareSheet = lazy(() => import("@/routes/seller/share-sheet").then((m) => ({ default: m.ShareSheet })));
 
 function roomTitle(view: ConversationView): string {
   return view.agreement?.agreement.title ?? view.activeProposal?.terms.title ?? "Nuevo trato";
@@ -388,9 +387,7 @@ export function Room({ source, fallback }: { source: RoomSource; fallback?: (err
       />
 
       {isSeller && share && (
-        <Suspense fallback={null}>
-          <ShareSheet open={shareOpen} onClose={() => setShareOpen(false)} links={share} title={roomTitle(view)} />
-        </Suspense>
+        <ShareSheet open={shareOpen} onClose={() => setShareOpen(false)} links={share} title={roomTitle(view)} />
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import {
   conversationView,
   eventItem,
   proposal,
+  sellerAgreementFixture,
   proposalMsg,
   textMsg,
 } from "@/lib/test-fixtures";
@@ -102,5 +103,53 @@ describe("Room", () => {
     expect(host.textContent).toContain("Acepto este acuerdo");
     expect(host.textContent).toContain("Escribir \"sí\" no acepta el trato");
     expect(host.querySelector('[aria-label="Adjuntar foto de la entrega"]')).toBeNull();
+  });
+
+  it("seller: confirmar la versión 1 (sin acuerdo previo) abre la hoja de compartir con el shareUrl de la respuesta", async () => {
+    const p = proposal();
+    const before = conversationView({
+      feed: [proposalMsg("m1", 1, 0, p)],
+      activeProposal: p,
+      allowedActions: actions("CONFIRM_PROPOSAL"),
+    });
+    const sa = sellerAgreementFixture({ conversationId: "c1" });
+    const after = conversationView({
+      feed: [proposalMsg("m1", 1, 0, { ...p, status: "SELLER_CONFIRMED" })],
+      activeProposal: { ...p, status: "SELLER_CONFIRMED" },
+      agreement: sa,
+      allowedActions: actions("SHARE_LINK", "EXPORT"),
+    });
+    const shareUrl = "https://trato.test/t/abc123";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes("/health")) return json({ ok: true, mode: "live", assistant: before.assistant });
+        if (init?.method === "POST" && url.includes("/confirm")) {
+          return json({ conversation: after, shareUrl, whatsappUrl: "https://wa.me/?text=hola" });
+        }
+        return json(before);
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <ToastProvider>
+            <Room source={{ role: "SELLER", conversationId: "c1" }} />
+          </ToastProvider>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    const btn = [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Confirmo y compartir"));
+    expect(btn).toBeTruthy();
+    await act(async () => {
+      btn?.click();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    const dialog = host.querySelector("dialog");
+    expect(dialog?.textContent).toContain(shareUrl);
+    expect(dialog?.hasAttribute("open")).toBe(true);
   });
 });
