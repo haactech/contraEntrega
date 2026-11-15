@@ -4,6 +4,8 @@ import {
   BUYER_HIDDEN_EVENT_TYPES,
   EventTypeSchema,
   computeBuyerNextAction,
+  computeCleaningBuyerNextAction,
+  computeCleaningSellerNextAction,
   computeSellerNextAction,
   type AgreementCore,
   type AgreementSummary,
@@ -14,11 +16,13 @@ import {
   type PaymentRequestView,
   type ReviewView,
   type SellerAgreementView,
+  type TaskProgress,
+  type TaskView,
 } from "@trato/shared";
 import type { AppEnv } from "../env";
 import { decryptText, signUrl } from "../lib/crypto";
 import { evidenceUrlExpiry } from "../lib/url-window";
-import type { AgreementBundle, AgreementRow, MilestoneRow } from "../repos/agreements";
+import type { AgreementBundle, AgreementRow, MilestoneRow, TaskRow } from "../repos/agreements";
 
 
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -108,8 +112,56 @@ export async function evidenceView(
     sizeBytes: e.sizeBytes,
     sha256: e.sha256,
     submitted: e.submitted,
+    taskId: e.taskId,
+    kind: e.kind,
+    revisionNumber: e.revisionNumber,
     createdAt: iso(e.createdAt),
   };
+}
+
+export const isCleaning = (a: Pick<AgreementRow, "serviceType">): boolean => a.serviceType === "CLEANING";
+
+export const taskProgressOf = (tasks: readonly { status: TaskRow["status"] }[]): TaskProgress => ({
+  approved: tasks.filter((t) => t.status === "APPROVED").length,
+  total: tasks.length,
+});
+
+/**
+ * Cleaning checklist with each task's photos and decisions. Unsubmitted photos are only for the
+ * seller (`includeDrafts`); the buyer sees a photo once its revision was submitted.
+ */
+export async function taskViews(
+  env: AppEnv,
+  b: AgreementBundle,
+  nowMs: number,
+  includeDrafts: boolean,
+): Promise<TaskView[] | null> {
+  if (!isCleaning(b.agreement)) return null;
+  return Promise.all(
+    b.tasks.map(async (t) => ({
+      id: t.id,
+      position: t.position,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      revision: t.revision,
+      submittedAt: isoOrNull(t.submittedAt),
+      approvedAt: isoOrNull(t.approvedAt),
+      evidence: await Promise.all(
+        b.evidence.filter((e) => e.taskId === t.id && (includeDrafts || e.submitted)).map((e) => evidenceView(env, e, nowMs)),
+      ),
+      reviews: b.taskReviews
+        .filter((r) => r.taskId === t.id)
+        .map((r) => ({
+          id: r.id,
+          revisionNumber: r.revisionNumber,
+          decision: r.decision,
+          comment: r.comment,
+          reviewerName: r.reviewerName,
+          createdAt: iso(r.createdAt),
+        })),
+    })),
+  );
 }
 
 export const reviewView = (r: AgreementBundle["reviews"][number]): ReviewView => ({
@@ -162,7 +214,9 @@ export function sellerSummary(
   a: AgreementRow,
   balanceStatus: MilestoneRow["status"],
   conversationId: string | null = null,
+  tasks: readonly { status: TaskRow["status"] }[] = [],
 ): AgreementSummary {
+  const cleaning = a.serviceType === "CLEANING";
   return {
     id: a.id,
     code: a.code,
@@ -172,15 +226,24 @@ export function sellerSummary(
     status: a.status,
     dueDate: a.dueDate,
     conversationId,
-    nextAction: computeSellerNextAction({
-      agreementStatus: a.status,
-      advanceStatus: "PENDING_ACCEPTANCE",
-      balanceStatus,
-    }),
+    nextAction: cleaning
+      ? computeCleaningSellerNextAction({ agreementStatus: a.status, balanceStatus, tasks })
+      : computeSellerNextAction({ agreementStatus: a.status, advanceStatus: "PENDING_ACCEPTANCE", balanceStatus }),
+    serviceType: a.serviceType,
+    taskProgress: cleaning ? taskProgressOf(tasks) : null,
     createdAt: iso(a.createdAt),
     updatedAt: iso(a.updatedAt),
   };
 }
+
+const nextActionSeller = (b: AgreementBundle) =>
+  isCleaning(b.agreement)
+    ? computeCleaningSellerNextAction({ agreementStatus: b.agreement.status, balanceStatus: states(b).balanceStatus, tasks: b.tasks })
+    : computeSellerNextAction(states(b));
+const nextActionBuyer = (b: AgreementBundle) =>
+  isCleaning(b.agreement)
+    ? computeCleaningBuyerNextAction({ agreementStatus: b.agreement.status, balanceStatus: states(b).balanceStatus, tasks: b.tasks })
+    : computeBuyerNextAction(states(b));
 
 const prViews = (b: AgreementBundle): PaymentRequestView[] => {
   const kinds = new Map(b.milestones.map((m) => [m.id, m.kind]));
@@ -207,12 +270,16 @@ export async function buildSellerView(
     milestones: [...b.milestones].sort(byKind).map(milestoneView),
     paymentRequests: prViews(b),
     evidence: await Promise.all(b.evidence.map((e) => evidenceView(env, e, nowMs))),
+    serviceType: b.agreement.serviceType,
+    paymentStrategy: b.agreement.paymentStrategy,
+    tasks: await taskViews(env, b, nowMs, true),
+    taskProgress: isCleaning(b.agreement) ? taskProgressOf(b.tasks) : null,
     reviews: b.reviews.map(reviewView),
     events: eventViews(b.events, false),
     shareUrl,
     whatsappUrl: shareUrl ? whatsappLink(b.agreement, shareUrl) : null,
     conversationId: b.conversationId,
-    nextAction: computeSellerNextAction(states(b)),
+    nextAction: nextActionSeller(b),
   };
 }
 
@@ -227,9 +294,13 @@ export async function buildBuyerView(env: AppEnv, b: AgreementBundle, nowMs: num
     paymentRequests: prs,
     // Draft (unsubmitted) evidence is never shown to the buyer.
     evidence: await Promise.all(b.evidence.filter((e) => e.submitted).map((e) => evidenceView(env, e, nowMs))),
+    serviceType: b.agreement.serviceType,
+    paymentStrategy: b.agreement.paymentStrategy,
+    tasks: await taskViews(env, b, nowMs, false),
+    taskProgress: isCleaning(b.agreement) ? taskProgressOf(b.tasks) : null,
     reviews: b.reviews.map(reviewView),
     events: eventViews(b.events, true),
     activePaymentRequest: active,
-    nextAction: computeBuyerNextAction(states(b)),
+    nextAction: nextActionBuyer(b),
   };
 }

@@ -16,8 +16,13 @@ import type {
   MilestoneStatus,
   PaymentMethod,
   PaymentRequestStatus,
+  PaymentStrategy,
   ProposalStatus,
   ReviewDecision,
+  ServiceType,
+  TaskReviewDecision,
+  TaskStatus,
+  EvidenceKind,
   WebhookProcessingStatus,
 } from "@trato/shared";
 
@@ -65,6 +70,9 @@ export const agreements = sqliteTable(
     termsJson: text("terms_json"),
     termsSha256: text("terms_sha256"),
     termsVersion: integer("terms_version").notNull().default(1),
+    /** Cleaning template: GENERIC (v0.2) or CLEANING (per-task review, single payment on completion). */
+    serviceType: text("service_type").$type<ServiceType>().notNull().default("GENERIC"),
+    paymentStrategy: text("payment_strategy").$type<PaymentStrategy>().notNull().default("ADVANCE_AND_BALANCE"),
     status: text("status").$type<AgreementStatus>().notNull().default("DRAFT"),
     sharedAt: integer("shared_at"),
     buyerAcceptedAt: integer("buyer_accepted_at"),
@@ -162,9 +170,17 @@ export const evidence = sqliteTable(
     mimeType: text("mime_type").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     submitted: integer("submitted", { mode: "boolean" }).notNull().default(false),
+    /** Cleaning: the task this photo belongs to. */
+    taskId: text("task_id").references(() => agreementTasks.id),
+    kind: text("kind").$type<EvidenceKind>().notNull().default("AFTER"),
+    /** Cleaning: task revision the photo was uploaded for. */
+    revisionNumber: integer("revision_number"),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [index("evidence_agreement_idx").on(t.agreementId)],
+  (t) => [
+    index("evidence_agreement_idx").on(t.agreementId),
+    index("evidence_task_revision_idx").on(t.taskId, t.revisionNumber),
+  ],
 );
 
 export const reviews = sqliteTable("reviews", {
@@ -178,6 +194,44 @@ export const reviews = sqliteTable("reviews", {
   buyerName: text("buyer_name").notNull(),
   createdAt: integer("created_at").notNull(),
 });
+
+export const agreementTasks = sqliteTable(
+  "agreement_tasks",
+  {
+    id: text("id").primaryKey(),
+    agreementId: text("agreement_id")
+      .notNull()
+      .references(() => agreements.id),
+    position: integer("position").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").$type<TaskStatus>().notNull().default("TODO"),
+    /** Current attempt (starts at 1, +1 on every adjustment request). */
+    revision: integer("revision").notNull().default(1),
+    submittedAt: integer("submitted_at"),
+    approvedAt: integer("approved_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("agreement_tasks_agreement_position_uq").on(t.agreementId, t.position)],
+);
+
+/** Append-only. UNIQUE(task_id, revision_number): a revision can be decided exactly once. */
+export const taskReviews = sqliteTable(
+  "task_reviews",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => agreementTasks.id),
+    revisionNumber: integer("revision_number").notNull(),
+    decision: text("decision").$type<TaskReviewDecision>().notNull(),
+    comment: text("comment"),
+    reviewerName: text("reviewer_name").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("task_reviews_task_revision_uq").on(t.taskId, t.revisionNumber)],
+);
 
 export const agreementEvents = sqliteTable(
   "agreement_events",

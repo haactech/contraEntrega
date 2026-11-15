@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   type ActionVia,
   onAccepted,
+  onAcceptedCleaning,
   type AcceptAgreementRequest,
   type BuyerAgreementView,
 } from "@trato/shared";
@@ -41,7 +42,8 @@ export async function acceptAgreement(
 ): Promise<BuyerAgreementView> {
   const b = await loadBundle(db, agreementId);
   if (!b) throw notFound("Este enlace no existe o ya no está vigente.");
-  const transition = onAccepted(b.agreement);
+  const cleaning = b.agreement.serviceType === "CLEANING";
+  const transition = cleaning ? onAcceptedCleaning(b.agreement) : onAccepted(b.agreement);
   if (!transition.ok) throw new AppError(transition.code, transition.message);
   if (!b.agreement.termsSha256 || input.termsSha256 !== b.agreement.termsSha256) {
     throw new AppError("TERMS_MISMATCH", "Las condiciones cambiaron o no coinciden con las que viste. Recarga la página para revisarlas.");
@@ -66,12 +68,20 @@ export async function acceptAgreement(
           })
           .where(and(eq(agreements.id, agreementId), eq(agreements.version, v), eq(agreements.status, "SHARED"))),
       ),
+      // CLEANING has no advance milestone: BALANCE just stays WAITING_DELIVERY (no-op statement).
       stmt(
         env.DB,
         db
           .update(milestones)
-          .set({ status: transition.advanceStatus })
-          .where(and(eq(milestones.agreementId, agreementId), eq(milestones.kind, "ADVANCE"), eq(milestones.status, "PENDING_ACCEPTANCE"), guard)),
+          .set({ status: "advanceStatus" in transition ? transition.advanceStatus : "WAITING_DELIVERY" })
+          .where(
+            and(
+              eq(milestones.agreementId, agreementId),
+              eq(milestones.kind, cleaning ? "BALANCE" : "ADVANCE"),
+              eq(milestones.status, cleaning ? "WAITING_DELIVERY" : "PENDING_ACCEPTANCE"),
+              guard,
+            ),
+          ),
       ),
       // The confirmed proposal of this room is now ACCEPTED; anything still OPEN is moot.
       rawStmt(

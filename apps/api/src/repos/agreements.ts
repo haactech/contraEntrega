@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import {
   agreementEvents,
+  agreementTasks,
   agreements,
   buyerAccess,
   conversations,
@@ -11,9 +12,11 @@ import {
   paymentRequests,
   reviews,
   sellers,
+  taskReviews,
 } from "../db/schema";
 
 export type AgreementRow = typeof agreements.$inferSelect;
+export type TaskRow = typeof agreementTasks.$inferSelect;
 export type MilestoneRow = typeof milestones.$inferSelect;
 export type SellerRow = typeof sellers.$inferSelect;
 export type AccountRow = typeof demoBankAccounts.$inferSelect;
@@ -26,14 +29,17 @@ export interface AgreementBundle {
   paymentRequests: (typeof paymentRequests.$inferSelect)[];
   evidence: (typeof evidence.$inferSelect)[];
   reviews: (typeof reviews.$inferSelect)[];
+  /** Cleaning checklist (empty for GENERIC), ordered by position. */
+  tasks: TaskRow[];
+  taskReviews: (typeof taskReviews.$inferSelect)[];
   events: (typeof agreementEvents.$inferSelect)[];
   activeAccess: typeof buyerAccess.$inferSelect | null;
   conversationId: string | null;
 }
 
-/** Loads the whole agreement: 8 independent reads issued in parallel. */
+/** Loads the whole agreement: 10 independent reads issued in parallel. */
 export async function loadBundle(db: Db, agreementId: string): Promise<AgreementBundle | null> {
-  const [head, ms, prs, ev, rv, evs, acc, conv] = await Promise.all([
+  const [head, ms, prs, ev, rv, evs, acc, conv, tks, trs] = await Promise.all([
     db
       .select({ agreement: agreements, seller: sellers, account: demoBankAccounts })
       .from(agreements)
@@ -63,6 +69,13 @@ export async function loadBundle(db: Db, agreementId: string): Promise<Agreement
       .orderBy(desc(buyerAccess.issuedAt))
       .limit(1),
     db.select({ id: conversations.id }).from(conversations).where(eq(conversations.agreementId, agreementId)).limit(1),
+    db.select().from(agreementTasks).where(eq(agreementTasks.agreementId, agreementId)).orderBy(agreementTasks.position),
+    db
+      .select({ tr: taskReviews })
+      .from(taskReviews)
+      .innerJoin(agreementTasks, eq(agreementTasks.id, taskReviews.taskId))
+      .where(eq(agreementTasks.agreementId, agreementId))
+      .orderBy(taskReviews.createdAt),
   ]);
   const h = head[0];
   if (!h) return null;
@@ -74,6 +87,8 @@ export async function loadBundle(db: Db, agreementId: string): Promise<Agreement
     paymentRequests: prs.map((r) => r.pr),
     evidence: ev,
     reviews: rv.map((r) => r.rv),
+    tasks: tks,
+    taskReviews: trs.map((r) => r.tr),
     events: evs,
     activeAccess: acc[0] ?? null,
     conversationId: conv[0]?.id ?? null,
@@ -97,8 +112,18 @@ export async function listBySeller(db: Db, sellerId: string) {
     .from(conversations)
     .where(inArray(conversations.agreementId, rows.map((r) => r.id)));
   const convBy = new Map(convs.map((c) => [c.agreementId, c.id]));
+  const cleaningIds = rows.filter((r) => r.serviceType === "CLEANING").map((r) => r.id);
+  const taskRows = cleaningIds.length
+    ? await db
+        .select({ agreementId: agreementTasks.agreementId, status: agreementTasks.status })
+        .from(agreementTasks)
+        .where(inArray(agreementTasks.agreementId, cleaningIds))
+    : [];
+  const tasksBy = new Map<string, { status: TaskRow["status"] }[]>();
+  for (const t of taskRows) tasksBy.set(t.agreementId, [...(tasksBy.get(t.agreementId) ?? []), { status: t.status }]);
   return rows.map((a) => ({
     agreement: a,
+    tasks: tasksBy.get(a.id) ?? [],
     balanceStatus: byId.get(a.id) ?? "WAITING_DELIVERY",
     conversationId: convBy.get(a.id) ?? null,
   }));

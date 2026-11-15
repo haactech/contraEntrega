@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   allowedActions,
+  computeCleaningSellerNextAction,
   computeSellerNextAction,
   noAgreementActionState,
   type ActionRole,
@@ -13,7 +14,7 @@ import {
   compareFeedItems,
 } from "@trato/shared";
 import type { Db } from "../db/client";
-import { agreements, conversations, llmCalls, messages, milestones, proposals } from "../db/schema";
+import { agreementTasks, agreements, conversations, llmCalls, messages, milestones, proposals } from "../db/schema";
 import { assistantStatus } from "../assistant/provider";
 import type { AppEnv } from "../env";
 import { expireStalePaymentRequests } from "../payments/expire";
@@ -85,6 +86,9 @@ export function actionStateOf(b: AgreementBundle | null, hasOpenProposal: boolea
     hasOpenProposal,
     nowMs,
     account: { codiStatus: b.account.codiStatus, enabled: b.account.enabled },
+    ...(b.agreement.serviceType === "CLEANING"
+      ? { serviceType: "CLEANING" as const, tasks: b.tasks.map((t) => ({ id: t.id, status: t.status, revision: t.revision })) }
+      : {}),
   };
 }
 
@@ -220,7 +224,7 @@ export async function listConversationSummaries(db: Db, d1: D1Database, sellerId
   if (convs.length === 0) return [];
   const ids = convs.map((c) => c.id);
   const agreementIds = convs.flatMap((c) => (c.agreementId ? [c.agreementId] : []));
-  const [agrRows, msRows, propRows, last] = await Promise.all([
+  const [agrRows, msRows, propRows, last, taskRows] = await Promise.all([
     agreementIds.length ? db.select().from(agreements).where(inArray(agreements.id, agreementIds)) : Promise.resolve([]),
     agreementIds.length ? db.select().from(milestones).where(inArray(milestones.agreementId, agreementIds)) : Promise.resolve([]),
     db
@@ -236,6 +240,7 @@ export async function listConversationSummaries(db: Db, d1: D1Database, sellerId
       )
       .bind(...ids)
       .all<{ cid: string; text: string }>(),
+    agreementIds.length ? db.select().from(agreementTasks).where(inArray(agreementTasks.agreementId, agreementIds)) : Promise.resolve([]),
   ]);
   const lastBy = new Map(last.results.map((r) => [r.cid, r.text]));
   const agrById = new Map(agrRows.map((a) => [a.id, a]));
@@ -258,11 +263,17 @@ export async function listConversationSummaries(db: Db, d1: D1Database, sellerId
       totalCents: a?.totalCents ?? terms?.totalCents ?? null,
       agreementStatus: a?.status ?? null,
       nextAction: a
-        ? computeSellerNextAction({
-            agreementStatus: a.status,
-            advanceStatus: status(a.id, "ADVANCE") ?? "PENDING_ACCEPTANCE",
-            balanceStatus: status(a.id, "BALANCE") ?? "WAITING_DELIVERY",
-          })
+        ? a.serviceType === "CLEANING"
+          ? computeCleaningSellerNextAction({
+              agreementStatus: a.status,
+              balanceStatus: status(a.id, "BALANCE") ?? "WAITING_DELIVERY",
+              tasks: taskRows.filter((t) => t.agreementId === a.id),
+            })
+          : computeSellerNextAction({
+              agreementStatus: a.status,
+              advanceStatus: status(a.id, "ADVANCE") ?? "PENDING_ACCEPTANCE",
+              balanceStatus: status(a.id, "BALANCE") ?? "WAITING_DELIVERY",
+            })
         : null,
       hasOpenProposal: p?.status === "OPEN",
       lastMessagePreview: preview === undefined ? null : preview.slice(0, 120),

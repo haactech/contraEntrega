@@ -1,10 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
   type ActionVia,
+  buildCleaningAcceptanceCriteria,
   buildTermsSnapshot,
   canShare,
   canonicalJson,
-  type CreateAgreementData,
+  type CreateAnyAgreementData,
+  type CreateCleaningAgreementData,
   type SellerAgreementView,
   type ShareAgreementResponse,
   sha256Hex,
@@ -12,7 +14,7 @@ import {
 } from "@trato/shared";
 import { rawStmt, stmt, type Db } from "../db/client";
 import { GUARD_SQL, claimStmt } from "../payments/common";
-import { agreements, buyerAccess, milestones } from "../db/schema";
+import { agreementTasks, agreements, buyerAccess, milestones } from "../db/schema";
 import type { AppEnv } from "../env";
 import { decryptText, encryptText, randomToken } from "../lib/crypto";
 import { expireStalePaymentRequests } from "../payments/expire";
@@ -32,7 +34,7 @@ export async function listAgreements(db: Db, sellerId: string) {
     SELECT lower(hex(randomblob(16))), a.seller_id, a.id, a.created_at, a.updated_at, 1
     FROM agreements a WHERE a.seller_id = ${sellerId} AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.agreement_id = a.id)`);
   const rows = await listBySeller(db, sellerId);
-  return { agreements: rows.map((r) => sellerSummary(r.agreement, r.balanceStatus, r.conversationId)) };
+  return { agreements: rows.map((r) => sellerSummary(r.agreement, r.balanceStatus, r.conversationId, r.tasks)) };
 }
 
 /** Loads a bundle owned by `sellerId`; 404 (not 403) when it belongs to someone else. */
@@ -47,18 +49,41 @@ export async function getSellerView(db: Db, env: AppEnv, sellerId: string, agree
   return buildSellerView(env, await loadOwned(db, sellerId, agreementId), now);
 }
 
+export const isCleaningInput = (i: CreateAnyAgreementData): i is CreateCleaningAgreementData =>
+  "serviceType" in i && i.serviceType === "CLEANING";
+
+/** Terms fields shared by every creation/revision path; CLEANING derives the criteria from the checklist. */
+function normalizedTerms(input: CreateAnyAgreementData) {
+  if (isCleaningInput(input)) {
+    return {
+      cleaning: true as const,
+      acceptanceCriteria: buildCleaningAcceptanceCriteria(input.tasks),
+      split: { totalCents: input.totalCents, advanceCents: 0, balanceCents: input.totalCents },
+      tasks: input.tasks.map((t, position) => ({ position, title: t.title, description: t.description?.trim() ? t.description.trim() : null })),
+    };
+  }
+  return {
+    cleaning: false as const,
+    acceptanceCriteria: input.acceptanceCriteria,
+    split: splitTotal(input.totalCents, input.advanceCents),
+    tasks: [] as { position: number; title: string; description: string | null }[],
+  };
+}
+
+/** Creates a GENERIC or CLEANING agreement (same function for the form, the API, MCP and the chat). */
 export async function createAgreement(
   db: Db,
   env: AppEnv,
   sellerId: string,
-  input: CreateAgreementData,
+  input: CreateAnyAgreementData,
   now: number,
   opts: { conversationId?: string | undefined; via?: ActionVia | undefined; actorRef?: string | undefined } = {},
 ): Promise<SellerAgreementView> {
   const seller = await findSeller(db, sellerId);
   if (!seller) throw notFound("No encontramos al prestador.");
   // Amounts are always computed on the server.
-  const split = splitTotal(input.totalCents, input.advanceCents);
+  const norm = normalizedTerms(input);
+  const split = norm.split;
   const code = formatCode(await nextCounter(db, "agreement_code"));
   const id = crypto.randomUUID();
   const createWriteId = crypto.randomUUID();
@@ -69,7 +94,7 @@ export async function createAgreement(
     code,
     title: input.title,
     description: input.description,
-    acceptanceCriteria: input.acceptanceCriteria,
+    acceptanceCriteria: norm.acceptanceCriteria,
     buyerName: input.buyerName,
     dueDate: input.dueDate ?? null,
     totalCents: split.totalCents,
@@ -77,6 +102,7 @@ export async function createAgreement(
     sellerDisplayName: seller.seller.displayName,
     payeeAlias: seller.account.alias,
     payeeLast4: seller.account.clabeLast4,
+    ...(norm.cleaning ? { serviceType: "CLEANING" as const, tasks: norm.tasks } : {}),
   });
   const termsJson = canonicalJson(snapshot);
   const termsSha256 = await sha256Hex(termsJson);
@@ -97,6 +123,8 @@ export async function createAgreement(
         termsJson,
         termsSha256,
         termsVersion: snapshot.termsVersion,
+        serviceType: norm.cleaning ? "CLEANING" : "GENERIC",
+        paymentStrategy: norm.cleaning ? "ON_COMPLETION" : "ADVANCE_AND_BALANCE",
         status: "DRAFT",
         createdAt: now,
         updatedAt: now,
@@ -104,23 +132,40 @@ export async function createAgreement(
         writeId: createWriteId,
       })),
       stmt(env.DB, db.insert(milestones).values([
+        ...(norm.cleaning
+          ? []
+          : [{
+              id: crypto.randomUUID(),
+              agreementId: id,
+              kind: "ADVANCE" as const,
+              amountCents: split.advanceCents,
+              description: "Anticipo",
+              status: "PENDING_ACCEPTANCE" as const,
+            }]),
         {
           id: crypto.randomUUID(),
           agreementId: id,
-          kind: "ADVANCE",
-          amountCents: split.advanceCents,
-          description: "Anticipo",
-          status: "PENDING_ACCEPTANCE",
-        },
-        {
-          id: crypto.randomUUID(),
-          agreementId: id,
-          kind: "BALANCE",
+          kind: "BALANCE" as const,
           amountCents: split.balanceCents,
-          description: "Saldo contra entrega",
-          status: "WAITING_DELIVERY",
+          description: norm.cleaning ? "Pago al terminar" : "Saldo contra entrega",
+          status: "WAITING_DELIVERY" as const,
         },
       ])),
+      ...(norm.cleaning
+        ? [stmt(env.DB, db.insert(agreementTasks).values(
+            norm.tasks.map((t) => ({
+              id: crypto.randomUUID(),
+              agreementId: id,
+              position: t.position,
+              title: t.title,
+              description: t.description,
+              status: "TODO" as const,
+              revision: 1,
+              createdAt: now,
+              updatedAt: now,
+            })),
+          ))]
+        : []),
       ...appendEventStatements(env.DB, {
         agreementId: id,
         type: "AGREEMENT_CREATED",
@@ -131,6 +176,7 @@ export async function createAgreement(
           totalCents: split.totalCents,
           advanceCents: split.advanceCents,
           balanceCents: split.balanceCents,
+          ...(norm.cleaning ? { serviceType: "CLEANING", taskCount: norm.tasks.length } : {}),
           ...(opts.via ? { via: opts.via } : {}),
         },
         now,
@@ -211,6 +257,12 @@ export async function shareAgreement(
         payeeAlias: b.account.alias,
         payeeLast4: b.account.clabeLast4,
         termsVersion: b.agreement.termsVersion,
+        ...(b.agreement.serviceType === "CLEANING"
+          ? {
+              serviceType: "CLEANING" as const,
+              tasks: b.tasks.map((t) => ({ position: t.position, title: t.title, description: t.description })),
+            }
+          : {}),
       });
       const termsJson = canonicalJson(snapshot);
       sealed = { termsJson, termsSha256: await sha256Hex(termsJson) };
@@ -298,7 +350,7 @@ export async function reviseTerms(
   env: AppEnv,
   sellerId: string,
   agreementId: string,
-  input: CreateAgreementData,
+  input: CreateAnyAgreementData,
   now: number,
   opts: { via?: ActionVia | undefined; actorRef?: string | undefined } = {},
 ): Promise<SellerAgreementView> {
@@ -307,16 +359,20 @@ export async function reviseTerms(
     if (b.agreement.status !== "DRAFT" && b.agreement.status !== "SHARED") {
       throw invalidState("Las condiciones ya no se pueden cambiar: el comprador ya las aceptó.");
     }
+    const norm = normalizedTerms(input);
+    if (norm.cleaning !== (b.agreement.serviceType === "CLEANING")) {
+      throw invalidState("El tipo de trato no se puede cambiar.");
+    }
     if (b.paymentRequests.some((p) => ["CREATING", "AWAITING_PAYMENT", "CREATION_UNKNOWN"].includes(p.status))) {
       throw invalidState("Hay una solicitud de pago en curso; no se pueden cambiar las condiciones.");
     }
-    const split = splitTotal(input.totalCents, input.advanceCents);
+    const split = norm.split;
     const termsVersion = b.agreement.termsVersion + 1;
     const snapshot = buildTermsSnapshot({
       code: b.agreement.code,
       title: input.title,
       description: input.description,
-      acceptanceCriteria: input.acceptanceCriteria,
+      acceptanceCriteria: norm.acceptanceCriteria,
       buyerName: input.buyerName,
       dueDate: input.dueDate ?? null,
       totalCents: split.totalCents,
@@ -325,6 +381,7 @@ export async function reviseTerms(
       payeeAlias: b.account.alias,
       payeeLast4: b.account.clabeLast4,
       termsVersion,
+      ...(norm.cleaning ? { serviceType: "CLEANING" as const, tasks: norm.tasks } : {}),
     });
     const termsJson = canonicalJson(snapshot);
     const termsSha256 = await sha256Hex(termsJson);
@@ -358,6 +415,35 @@ export async function reviseTerms(
             })
             .where(and(eq(agreements.id, agreementId), guard(agreementId, writeId))),
         ),
+        // CLEANING: the checklist is replaced wholesale (DRAFT/SHARED only, so it never has evidence).
+        ...(norm.cleaning
+          ? [
+              rawStmt(
+                env.DB,
+                `DELETE FROM agreement_tasks WHERE agreement_id = ? AND NOT EXISTS (SELECT 1 FROM evidence WHERE agreement_id = ?) AND ${GUARD_SQL}`,
+                agreementId,
+                agreementId,
+                agreementId,
+                writeId,
+              ),
+              ...norm.tasks.map((t) =>
+                rawStmt(
+                  env.DB,
+                  `INSERT INTO agreement_tasks (id, agreement_id, position, title, description, status, revision, created_at, updated_at)
+                   SELECT ?, ?, ?, ?, ?, 'TODO', 1, ?, ? WHERE ${GUARD_SQL}`,
+                  crypto.randomUUID(),
+                  agreementId,
+                  t.position,
+                  t.title,
+                  t.description,
+                  now,
+                  now,
+                  agreementId,
+                  writeId,
+                ),
+              ),
+            ]
+          : []),
         rawStmt(
           env.DB,
           `UPDATE milestones SET amount_cents = ? WHERE agreement_id = ? AND kind = 'ADVANCE' AND status = 'PENDING_ACCEPTANCE' AND ${GUARD_SQL}`,
@@ -384,6 +470,7 @@ export async function reviseTerms(
             termsSha256,
             totalCents: split.totalCents,
             advanceCents: split.advanceCents,
+            ...(norm.cleaning ? { taskCount: norm.tasks.length } : {}),
             ...(opts.via ? { via: opts.via } : {}),
           },
           now,

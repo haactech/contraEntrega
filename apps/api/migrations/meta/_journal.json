@@ -15,6 +15,13 @@
       "when": 1794721191326,
       "tag": "0001_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794758371625,
+      "tag": "0002_cleaning_tasks",
+      "breakpoints": true
     }
   ]
 }
