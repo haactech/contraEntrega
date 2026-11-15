@@ -13,3 +13,7 @@ coverage/
 # Nunca versionar mapeos reales de cuentas
 infra/seed/accounts.local.json
 infra/seed/*.local.sql
+
+# Claude Code local
+.claude/worktrees/
+.claude/settings.local.json
