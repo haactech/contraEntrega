@@ -173,3 +173,62 @@ describe("allowedActions", () => {
     }
   });
 });
+
+describe("allowedActions CLEANING", () => {
+  const bal = (b: MilestoneStatus) => ({ kind: "BALANCE" as const, status: b, deliveryRound: 0 });
+  const cl = (
+    agreement: AgreementStatus,
+    balance: MilestoneStatus,
+    tasks: { status: "TODO" | "IN_REVIEW" | "NEEDS_ADJUSTMENT" | "APPROVED" }[],
+    extra: Partial<ActionState> = {},
+  ): ActionState => ({
+    agreement: { status: agreement },
+    advance: null,
+    balance: bal(balance),
+    activePaymentRequests: noPr,
+    unsubmittedEvidenceCount: 0,
+    hasOpenProposal: false,
+    nowMs: NOW,
+    account: { codiStatus: "ACTIVE", enabled: true },
+    serviceType: "CLEANING",
+    tasks: tasks.map((t, i) => ({ id: `t${i}`, revision: 1, ...t })),
+    ...extra,
+  });
+  const GENERIC_ONLY = ["UPLOAD_EVIDENCE", "REQUEST_REVIEW", "REDELIVER", "APPROVE_DELIVERY", "DISPUTE_DELIVERY", "PAY_ADVANCE"];
+
+  it("seller submits when a task is TODO or NEEDS_ADJUSTMENT and work is in progress", () => {
+    expect(S(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "TODO" }]))).toEqual(["SUBMIT_TASK", "EXPORT"]);
+    expect(S(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "NEEDS_ADJUSTMENT" }]))).toContain("SUBMIT_TASK");
+    expect(S(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "IN_REVIEW" }, { status: "APPROVED" }]))).not.toContain("SUBMIT_TASK");
+    expect(S(cl("SHARED", "WAITING_DELIVERY", [{ status: "TODO" }]))).toEqual(["SHARE_LINK", "EXPORT"]);
+  });
+  it("buyer approves or asks an adjustment only with a task IN_REVIEW", () => {
+    expect(B(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "IN_REVIEW" }, { status: "TODO" }]))).toEqual([
+      "APPROVE_TASK",
+      "REQUEST_ADJUSTMENT",
+      "EXPORT",
+    ]);
+    expect(B(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "TODO" }]))).toEqual(["EXPORT"]);
+    expect(B(cl("SHARED", "WAITING_DELIVERY", [{ status: "TODO" }]))).toEqual(["ACCEPT_TERMS", "EXPORT"]);
+  });
+  it("PAY_BALANCE only once the balance is READY_TO_CHARGE (all tasks approved)", () => {
+    expect(B(cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "APPROVED" }, { status: "TODO" }]))).not.toContain("PAY_BALANCE");
+    expect(B(cl("IN_PROGRESS", "READY_TO_CHARGE", [{ status: "APPROVED" }]))).toEqual(["PAY_BALANCE", "EXPORT"]);
+  });
+  it("never offers generic delivery actions or the advance", () => {
+    for (const s of [
+      cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "TODO" }], { unsubmittedEvidenceCount: 2 }),
+      cl("IN_PROGRESS", "READY_TO_CHARGE", [{ status: "APPROVED" }]),
+      cl("IN_PROGRESS", "WAITING_DELIVERY", [{ status: "IN_REVIEW" }]),
+    ]) {
+      for (const role of ["SELLER", "BUYER"] as const) {
+        for (const a of allowedActions(s, role)) expect(GENERIC_ONLY).not.toContain(a);
+      }
+    }
+  });
+  it("completed: no task actions", () => {
+    const done = cl("COMPLETED", "PAID", [{ status: "APPROVED" }]);
+    expect(S(done)).toEqual(["EXPORT"]);
+    expect(B(done)).toEqual(["EXPORT"]);
+  });
+});

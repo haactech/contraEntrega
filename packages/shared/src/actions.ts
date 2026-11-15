@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { ActorType } from "./enums";
+import type { ActorType, ServiceType, TaskStatus } from "./enums";
+import { canReviewTask, canSubmitTask } from "./tasks";
 import {
   canAccept,
   canAddEvidence,
@@ -25,6 +26,7 @@ export const ALLOWED_ACTIONS = [
   "UPLOAD_EVIDENCE",
   "REQUEST_REVIEW",
   "REDELIVER",
+  "SUBMIT_TASK",
   // buyer
   "ACCEPT_TERMS",
   "PAY_ADVANCE",
@@ -32,6 +34,8 @@ export const ALLOWED_ACTIONS = [
   "REFRESH_PAYMENT",
   "APPROVE_DELIVERY",
   "DISPUTE_DELIVERY",
+  "APPROVE_TASK",
+  "REQUEST_ADJUSTMENT",
   // both
   "EXPORT",
 ] as const;
@@ -51,6 +55,9 @@ export const ALLOWED_ACTION_LABELS: Readonly<Record<AllowedAction, string>> = {
   REFRESH_PAYMENT: "Revisar mi pago",
   APPROVE_DELIVERY: "Recibido, todo bien",
   DISPUTE_DELIVERY: "Reportar problema",
+  SUBMIT_TASK: "Enviar para revisión",
+  APPROVE_TASK: "Aprobar tarea",
+  REQUEST_ADJUSTMENT: "Pedir ajuste",
   EXPORT: "Descargar comprobante",
 };
 
@@ -74,6 +81,10 @@ export interface ActionState {
   hasOpenProposal: boolean;
   nowMs: number;
   account: PayeeAccountSnapshot;
+  /** "CLEANING" switches to task-based actions; absent = GENERIC. */
+  serviceType?: ServiceType;
+  /** CLEANING checklist (id/status/revision per task). */
+  tasks?: readonly { id: string; status: TaskStatus; revision: number }[];
 }
 
 /** State for a conversation that has no agreement yet. */
@@ -120,6 +131,7 @@ function payAction(
 export function allowedActions(state: ActionState, role: ActionRole): AllowedAction[] {
   const out = new Set<AllowedAction>();
   const { agreement, advance, balance } = state;
+  if (state.serviceType === "CLEANING") return allowedCleaningActions(state, role);
 
   if (role === "SELLER") {
     const revisable = agreement === null || agreement.status === "DRAFT" || agreement.status === "SHARED";
@@ -159,4 +171,43 @@ export function allowedActions(state: ActionState, role: ActionRole): AllowedAct
 /** Convenience for context building: both roles at once. */
 export function allowedActionsByRole(state: ActionState): Record<"seller" | "buyer", AllowedAction[]> {
   return { seller: allowedActions(state, "SELLER"), buyer: allowedActions(state, "BUYER") };
+}
+
+/** CLEANING (spec-limpieza §6.2): task actions instead of delivery actions; single BALANCE payment. */
+function allowedCleaningActions(state: ActionState, role: ActionRole): AllowedAction[] {
+  const out = new Set<AllowedAction>();
+  const { agreement, balance } = state;
+  const tasks = state.tasks ?? [];
+  const cleaning = agreement ? { status: agreement.status, serviceType: "CLEANING" as const } : null;
+
+  if (role === "SELLER") {
+    const revisable = agreement === null || agreement.status === "DRAFT" || agreement.status === "SHARED";
+    if (state.hasOpenProposal && revisable) out.add("CONFIRM_PROPOSAL");
+    if (agreement) {
+      if ((agreement.status === "DRAFT" || agreement.status === "SHARED") && canShare(agreement).ok) {
+        out.add("SHARE_LINK");
+      }
+      // Submitting needs ≥ 1 AFTER photo; the per-task card enforces it, the chip only needs a candidate.
+      if (cleaning && tasks.some((t) => canSubmitTask(cleaning, t, 1).ok)) out.add("SUBMIT_TASK");
+      out.add("EXPORT");
+    }
+  } else if (agreement) {
+    if (canAccept(agreement).ok) out.add("ACCEPT_TERMS");
+    if (cleaning && tasks.some((t) => canReviewTask(cleaning, t).ok)) {
+      out.add("APPROVE_TASK");
+      out.add("REQUEST_ADJUSTMENT");
+    }
+    if (payAction("balance", state, agreement)) out.add("PAY_BALANCE");
+    const pr = state.activePaymentRequests.balance;
+    if (
+      balance &&
+      pr !== null &&
+      (REFRESHABLE_PR as readonly string[]).includes(pr.status) &&
+      agreement.status !== "COMPLETED"
+    ) {
+      out.add("REFRESH_PAYMENT");
+    }
+    if (agreement.status !== "DRAFT") out.add("EXPORT");
+  }
+  return ALLOWED_ACTIONS.filter((a) => out.has(a));
 }

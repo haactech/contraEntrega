@@ -5,6 +5,8 @@ import {
   AssistantTurnSchema,
   NEUTRAL_ASSISTANT_REPLY,
   assistantFactsFromStatuses,
+  buildCleaningAcceptanceCriteria,
+  normalizedAcceptanceCriteria,
   buildAssistantContext,
   mexicoCityToday,
   normalizeProposal,
@@ -23,8 +25,23 @@ const proposal = (o: Partial<AssistantProposal> = {}): AssistantProposal => ({
   advanceMxn: 8000,
   dueDate: "2026-11-20",
   buyerName: "Mariana",
+  serviceType: "GENERIC",
+  tasks: [],
   ...o,
 });
+const cleaning = (o: Partial<AssistantProposal> = {}): AssistantProposal =>
+  proposal({
+    title: "Limpieza de departamento",
+    acceptanceCriteria: "",
+    totalMxn: 700,
+    advanceMxn: 0,
+    serviceType: "CLEANING",
+    tasks: [
+      { title: "Limpiar baño", description: null },
+      { title: "Limpiar cocina", description: "Estufa y barra" },
+    ],
+    ...o,
+  });
 const turn = (o: Partial<AssistantTurn> = {}): AssistantTurn => ({
   intent: "ANSWER",
   reply: "Listo.",
@@ -232,8 +249,117 @@ describe("AssistantTurn JSON Schema", () => {
     expect([...js.required].sort()).toEqual(["intent", "missingFields", "proposal", "reply", "suggestedAction"]);
     const prop = js.properties.proposal;
     const branch = (prop.anyOf ?? prop.oneOf).find((b: any) => b.type === "object");
-    expect([...branch.required].sort()).toEqual(["acceptanceCriteria", "advanceMxn", "buyerName", "description", "dueDate", "title", "totalMxn"]);
+    expect([...branch.required].sort()).toEqual(["acceptanceCriteria", "advanceMxn", "buyerName", "description", "dueDate", "serviceType", "tasks", "title", "totalMxn"]);
     expect(JSON.stringify(js)).not.toContain("$ref");
     expect(js.properties.intent.enum).toContain("PROPOSE_TERMS");
+    const tasks = branch.properties.tasks;
+    expect(tasks.type).toBe("array");
+    expect(tasks.items.additionalProperties).toBe(false);
+    expect([...tasks.items.required].sort()).toEqual(["description", "title"]);
+    expect(branch.properties.serviceType.enum).toEqual(["GENERIC", "CLEANING"]);
+  });
+});
+
+describe("normalizeProposal CLEANING", () => {
+  it("forces advance 0, numbers tasks 1..n and builds the criteria", () => {
+    const r = normalizeProposal(cleaning({ advanceMxn: 300 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.serviceType).toBe("CLEANING");
+    expect(r.input).toMatchObject({ serviceType: "CLEANING", totalCents: 70_000, buyerName: "Mariana" });
+    expect("advanceCents" in r.input).toBe(false);
+    expect(r.tasks).toEqual([
+      { position: 1, title: "Limpiar baño", description: null },
+      { position: 2, title: "Limpiar cocina", description: "Estufa y barra" },
+    ]);
+    expect(r.usedDefaultTasks).toBe(false);
+    expect(normalizedAcceptanceCriteria(r)).toBe(buildCleaningAcceptanceCriteria(r.tasks));
+  });
+  it("fills the 4 default template tasks when none are given", () => {
+    const r = normalizeProposal(cleaning({ tasks: [] }));
+    expect(r.ok && r.tasks.map((t) => t.title)).toEqual([
+      "Limpiar baño",
+      "Limpiar cocina",
+      "Trapear pisos",
+      "Limpiar ventanas",
+    ]);
+    expect(r.ok && r.usedDefaultTasks).toBe(true);
+  });
+  it("rejects duplicate tasks (case-insensitive) and more than 8", () => {
+    const dup = normalizeProposal(
+      cleaning({ tasks: [{ title: "Limpiar baño", description: null }, { title: "limpiar BAÑO", description: null }] }),
+    );
+    expect(dup).toMatchObject({ ok: false, missing: ["tasks"] });
+    const many = normalizeProposal(
+      cleaning({ tasks: Array.from({ length: 9 }, (_, i) => ({ title: `Tarea ${i + 1}`, description: null })) }),
+    );
+    expect(many).toMatchObject({ ok: false, missing: ["tasks"] });
+  });
+  it("still needs total and buyer", () => {
+    expect(normalizeProposal(cleaning({ totalMxn: 0 }))).toMatchObject({ ok: false, missing: ["total"] });
+    expect(normalizeProposal(cleaning({ buyerName: null }))).toMatchObject({ ok: false, missing: ["buyerName"] });
+  });
+  it("GENERIC result carries serviceType and no tasks", () => {
+    const r = normalizeProposal(proposal());
+    expect(r).toMatchObject({ ok: true, serviceType: "GENERIC", tasks: [] });
+  });
+  it("sanitizeAssistantTurn keeps a CLEANING proposal as normalized", () => {
+    const out = sanitizeAssistantTurn(turn({ intent: "PROPOSE_TERMS", proposal: cleaning() }), { allowed: [], state: NO_FACTS });
+    expect(out.normalized?.serviceType).toBe("CLEANING");
+  });
+});
+
+describe("task approval claims", () => {
+  const claim = (reply: string, facts: AssistantStateFacts = NO_FACTS) =>
+    sanitizeAssistantTurn(turn({ reply }), { allowed: [], state: facts }).turn.reply;
+  it("blocks «aprobé»/«ya está aprobada» unless all tasks are approved", () => {
+    for (const r of ["Ya aprobé la tarea del baño.", "La tarea ya está aprobada.", "Todas las tareas están aprobadas.", "El trabajo está aprobado."]) {
+      expect(claim(r)).toBe(NEUTRAL_ASSISTANT_REPLY);
+      expect(claim(r, { ...NO_FACTS, allTasksApproved: false })).toBe(NEUTRAL_ASSISTANT_REPLY);
+    }
+  });
+  it("allows it when facts say all tasks are approved", () => {
+    expect(claim("La tarea ya está aprobada.", { ...NO_FACTS, allTasksApproved: true })).toBe("La tarea ya está aprobada.");
+  });
+  it("does not block negations or neutral progress", () => {
+    expect(claim("Aún no está aprobada la tarea.")).toBe("Aún no está aprobada la tarea.");
+    expect(claim("Van 2 de 4 tareas aprobadas.")).toBe("Van 2 de 4 tareas aprobadas.");
+  });
+  it("assistantFactsFromStatuses derives allTasksApproved", () => {
+    expect(assistantFactsFromStatuses(null, "READY_TO_CHARGE", [{ status: "APPROVED" }]).allTasksApproved).toBe(true);
+    expect(assistantFactsFromStatuses(null, "WAITING_DELIVERY", [{ status: "APPROVED" }, { status: "TODO" }]).allTasksApproved).toBe(false);
+    expect(assistantFactsFromStatuses(null, "PAID").allTasksApproved).toBeUndefined();
+  });
+});
+
+describe("buildAssistantContext CLEANING", () => {
+  it("renders the checklist, progress and last adjustment reason", () => {
+    const ctx = buildAssistantContext({
+      nowMs: Date.UTC(2026, 10, 14, 18),
+      speaker: "BUYER",
+      agreement: {
+        status: "IN_PROGRESS",
+        terms: { title: "Limpieza", acceptanceCriteria: "x", buyerName: "Mariana", totalCents: 70_000, advanceCents: 0 },
+        milestones: [{ kind: "BALANCE", status: "WAITING_DELIVERY", amountCents: 70_000 }],
+        cleaning: {
+          serviceType: "CLEANING",
+          tasks: [
+            { title: "Limpiar baño", status: "APPROVED", revision: 1 },
+            { title: "Limpiar cocina", status: "NEEDS_ADJUSTMENT", revision: 2, lastAdjustmentReason: "Falta la estufa" },
+          ],
+        },
+      },
+      openProposal: null,
+      allowedActions: { seller: [], buyer: [] },
+      messages: [{ authorType: "BUYER", text: "¿cómo vamos?" }],
+    });
+    const state = JSON.parse(ctx.stateJson);
+    expect(state.acuerdo.tipoServicio).toBe("CLEANING");
+    expect(state.acuerdo.progreso).toEqual({ aprobadas: 1, total: 2 });
+    expect(state.acuerdo.tareas[1]).toMatchObject({ estado: "NEEDS_ADJUSTMENT", revision: 2, ultimoAjuste: "Falta la estufa" });
+  });
+  it("system prompt describes both types", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("CLEANING");
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain("GENERIC");
   });
 });

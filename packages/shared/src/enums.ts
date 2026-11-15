@@ -213,6 +213,7 @@ export const PROPOSAL_FIELDS = [
   "acceptanceCriteria",
   "buyerName",
   "dueDate",
+  "tasks",
 ] as const;
 export const ProposalFieldSchema = z.enum(PROPOSAL_FIELDS);
 export type ProposalField = z.infer<typeof ProposalFieldSchema>;
