@@ -2,10 +2,18 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { AppEnv, HonoEnv } from "../env";
 import { AppError } from "../lib/errors";
 
-type Limiter = "RL_PUBLIC_READ" | "RL_PUBLIC_WRITE";
+export type Limiter = "RL_PUBLIC_READ" | "RL_PUBLIC_WRITE";
 
 export function clientIp(c: Context<HonoEnv>): string {
   return c.req.header("cf-connecting-ip") ?? "local";
+}
+
+/** Consumes one unit of the limiter (no-op if the binding is absent); throws RATE_LIMITED when exhausted. */
+export async function checkRateLimit(env: AppEnv, binding: Limiter, key: string): Promise<void> {
+  const limiter: AppEnv[Limiter] | undefined = env[binding];
+  if (!limiter) return;
+  const { success } = await limiter.limit({ key });
+  if (!success) throw new AppError("RATE_LIMITED", "Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.");
 }
 
 /** Rate limit via the Workers Rate Limiting binding (no-op if the binding is absent). */
@@ -14,11 +22,7 @@ export function rateLimit(
   keyOf: (c: Context<HonoEnv>) => string,
 ): MiddlewareHandler<HonoEnv> {
   return async (c, next) => {
-    const limiter: AppEnv[Limiter] | undefined = c.env[binding];
-    if (limiter) {
-      const { success } = await limiter.limit({ key: keyOf(c) });
-      if (!success) throw new AppError("RATE_LIMITED", "Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.");
-    }
+    await checkRateLimit(c.env, binding, keyOf(c));
     await next();
   };
 }

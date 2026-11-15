@@ -16,6 +16,7 @@
     "verify-accounts": "tsx scripts/verify-accounts.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@trato/shared": "workspace:*",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.18",

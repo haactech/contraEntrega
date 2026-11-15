@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import type { HonoEnv } from "./env";
+import { handleMcpRequest } from "./mcp/handler";
+import { clientIp } from "./middleware/ratelimit";
 import { onError, onNotFound } from "./middleware/error";
 import { securityHeaders } from "./middleware/security";
 import { devRoutes } from "./routes/dev";
@@ -24,6 +26,8 @@ api.route("/dev", devRoutes);
 
 const app = new Hono<HonoEnv>();
 app.route("/api", api);
+app.use("/mcp", securityHeaders);
+app.all("/mcp", (c) => handleMcpRequest(c.req.raw, c.env, clientIp(c)));
 app.onError(onError);
 app.notFound(onNotFound);
 
